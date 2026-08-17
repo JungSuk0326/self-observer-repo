@@ -12,7 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - ✅ **선검증 스파이크 통과**: 모바일 브라우저(iPhone 15 Pro Safari)에서 MediaPipe 아바타 마스킹 + 부재/자세 감지가 실사용 FPS로 동작 확인. 발열 최적화 포함 — [spike/index.html](spike/index.html). 이 코드가 비전 파이프라인의 원형이다.
 - ✅ Next.js 스캐폴딩 완료 (App Router + TypeScript + Tailwind 4, `src/` 구조, 루트에 위치).
-- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 1번(비전 파이프라인 모듈화)부터.
+- ✅ 비전 파이프라인 모듈화: `src/lib/vision/`(React 비의존 FaceTracker — 10Hz 추론·보간·통계) + `src/hooks/useFaceTracking.ts`(신호는 ref로 60fps, React 리렌더는 5Hz만) + `src/components/AvatarCanvas.tsx`(임시 아트). 검증 페이지: `/dev/vision`.
+- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 2번(감지 엔진)부터.
 
 ```bash
 npm run dev      # 개발 서버 (localhost:3000)
