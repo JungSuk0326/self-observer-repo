@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AvatarCanvas from "@/components/AvatarCanvas";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
+import { DetectionEngine } from "@/lib/detection/detectionEngine";
+import type { FocusState } from "@/lib/detection/types";
+
+const STATE_BANNER: Record<FocusState, { label: string; className: string }> = {
+  initializing: { label: "⚪ 얼굴 찾는 중…", className: "bg-gray-700/90" },
+  focused: { label: "🟢 집중 감지 중", className: "bg-emerald-700/90" },
+  away: { label: "🔴 부재 감지 — 자리를 비웠어요", className: "bg-red-700/90" },
+  head_down: { label: "🟠 고개 숙임 지속 — 졸리신가요?", className: "bg-amber-600/90" },
+};
 
 /**
  * 비전 파이프라인 검증 페이지 (개발용).
@@ -12,6 +21,29 @@ export default function VisionDevPage() {
   const { videoRef, signalRef, signal, stats, status, error, start, stop } =
     useFaceTracking();
   const [showRaw, setShowRaw] = useState(false);
+  const engineRef = useRef(new DetectionEngine());
+  const [focusState, setFocusState] = useState<FocusState>("initializing");
+
+  // 5Hz로 신호를 읽어 감지 엔진에 공급 → 상태 배너 갱신
+  useEffect(() => {
+    if (status !== "running") return;
+    const engine = engineRef.current;
+    const timer = setInterval(() => {
+      const s = signalRef.current;
+      if (!s) return;
+      const { state } = engine.update({
+        present: s.present,
+        pitch: s.pose.pitch,
+        timestamp: s.timestamp,
+      });
+      setFocusState(state);
+    }, 200);
+    return () => {
+      clearInterval(timer);
+      engine.reset();
+      setFocusState("initializing");
+    };
+  }, [status, signalRef]);
 
   const fps = stats?.fps ?? 0;
   const fpsColor =
@@ -20,6 +52,15 @@ export default function VisionDevPage() {
   return (
     <main className="relative flex h-dvh flex-col bg-[#0f1115] text-gray-100">
       <AvatarCanvas signalRef={signalRef} className="min-h-0 w-full flex-1" />
+
+      {/* 감지 상태 배너 */}
+      {status === "running" && (
+        <div
+          className={`absolute inset-x-0 top-0 z-10 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] text-center text-sm font-semibold transition-colors ${STATE_BANNER[focusState].className}`}
+        >
+          {STATE_BANNER[focusState].label}
+        </div>
+      )}
 
       {/* 원본 미니뷰 (마스킹 비교용, 기본 숨김) */}
       <video
@@ -34,7 +75,7 @@ export default function VisionDevPage() {
 
       {/* 상태/통계 패널 */}
       {status === "running" && (
-        <div className="absolute right-2 top-2 z-10 rounded-xl border border-gray-700 bg-black/70 px-3 py-2 text-xs leading-relaxed tabular-nums">
+        <div className="absolute right-2 top-14 z-10 rounded-xl border border-gray-700 bg-black/70 px-3 py-2 text-xs leading-relaxed tabular-nums">
           <span className={`text-xl font-bold ${fpsColor}`}>{fps.toFixed(0)}</span>{" "}
           <span className="text-gray-400">FPS</span>
           <br />
