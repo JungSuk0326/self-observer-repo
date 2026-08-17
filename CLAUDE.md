@@ -10,11 +10,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 현재 상태
 
-아직 코드가 스캐폴딩되지 않았다(Next.js 프로젝트 미생성). 첫 작업은 MVP(P1) 스캐폴딩이며, 그 전에 아래 "가장 무서운 가정"부터 스파이크로 검증한다.
-
-> **선검증 스파이크**: 모바일 브라우저에서 MediaPipe 아바타 마스킹 + 부재/자세 감지가 실사용 FPS·발열로 돌아가는가? 이게 깨지면 제품 형태 자체가 바뀐다.
+- ✅ **선검증 스파이크 통과**: 모바일 브라우저(iPhone 15 Pro Safari)에서 MediaPipe 아바타 마스킹 + 부재/자세 감지가 실사용 FPS로 동작 확인. 발열 최적화 포함 — [spike/index.html](spike/index.html). 이 코드가 비전 파이프라인의 원형이다.
+- ⬜ Next.js 미스캐폴딩. 다음 작업은 [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 0번(스캐폴딩)부터.
 
 스캐폴딩 후 이 섹션을 실제 빌드/테스트/린트 명령으로 교체할 것.
+
+폰 테스트 방법: 로컬 서버 + `cloudflared tunnel --url http://localhost:<port>` 로 임시 HTTPS 주소 발급 (카메라 API는 HTTPS 필수).
 
 ## 기술 스택 (Web-Native, 계획)
 
@@ -41,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **P2**: 함께 모드(예약/매칭 — 자유입장 아님), 안전/모더레이션, 코스메틱 상점.
 - **P3+**: WebLLM 대화, 집중도 대시보드, 소셜/랭킹, UGC 마켓.
 
-P1 빌드 체크리스트는 [기능명세-유즈케이스.md](기능명세-유즈케이스.md)의 "MVP 빌드 체크리스트" 참고.
+구현 순서는 [기능명세-유즈케이스.md](기능명세-유즈케이스.md)의 "4. MVP 개발 순서" 참고 (엔진 먼저, UI 나중 — 진행 상황 체크박스 포함).
 
 ## 빌드 전 미확정 결정 (기획서 부록)
 
