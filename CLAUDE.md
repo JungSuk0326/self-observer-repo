@@ -57,3 +57,13 @@ npm run lint     # ESLint
 2. AI 모더레이션 분석 대상이 원본인가 아바타인가, 동의 흐름은.
 3. 미성년자 정책(연령 제한/보호자 동의/닫힌 방 한정).
 4. 아바타 마스킹의 가림 정도 vs 남길 신호의 균형점.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
