@@ -8,14 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 기획 근거와 결정의 "왜"는 [기획서.md](기획서.md), 만들 기능의 "무엇을"은 [기능명세-유즈케이스.md](기능명세-유즈케이스.md)에 있다. **코드 작성 전 이 두 문서를 먼저 읽을 것.**
 
-## 현재 상태
+## 현재 상태 & 명령어
 
 - ✅ **선검증 스파이크 통과**: 모바일 브라우저(iPhone 15 Pro Safari)에서 MediaPipe 아바타 마스킹 + 부재/자세 감지가 실사용 FPS로 동작 확인. 발열 최적화 포함 — [spike/index.html](spike/index.html). 이 코드가 비전 파이프라인의 원형이다.
-- ⬜ Next.js 미스캐폴딩. 다음 작업은 [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 0번(스캐폴딩)부터.
+- ✅ Next.js 스캐폴딩 완료 (App Router + TypeScript + Tailwind 4, `src/` 구조, 루트에 위치).
+- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 1번(비전 파이프라인 모듈화)부터.
 
-스캐폴딩 후 이 섹션을 실제 빌드/테스트/린트 명령으로 교체할 것.
+```bash
+npm run dev      # 개발 서버 (localhost:3000)
+npm run build    # 프로덕션 빌드 (변경 검증에 사용)
+npm run lint     # ESLint
+```
 
-폰 테스트 방법: 로컬 서버 + `cloudflared tunnel --url http://localhost:<port>` 로 임시 HTTPS 주소 발급 (카메라 API는 HTTPS 필수).
+폰 테스트 방법: `npm run dev` + `cloudflared tunnel --url http://localhost:3000` 로 임시 HTTPS 주소 발급 (카메라 API는 HTTPS 필수).
 
 ## 기술 스택 (Web-Native, 계획)
 
