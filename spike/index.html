@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>스파이크: 아바타 마스킹 + 감지 성능</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #0f1115; color: #e6e8ee; font-family: -apple-system, sans-serif; overflow: hidden; }
+  #stage { position: relative; width: 100%; height: 100dvh; display: flex; flex-direction: column; }
+
+  /* 아바타 캔버스가 메인 화면 */
+  #avatar { flex: 1; width: 100%; background: #171a21; }
+
+  /* 원본 비디오는 기본 숨김 (마스킹 검증), 토글로 좌하단 미니뷰 */
+  #video { position: absolute; left: 8px; bottom: 128px; width: 96px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 5; }
+  #video.show { opacity: 1; }
+
+  /* 상단 상태 배너 */
+  #banner { position: absolute; top: env(safe-area-inset-top, 0); left: 0; right: 0; padding: 10px 14px; text-align: center; font-size: 15px; font-weight: 600; background: rgba(30,160,90,.85); z-index: 10; transition: background .3s; }
+  #banner.warn { background: rgba(220,120,30,.9); }
+  #banner.alert { background: rgba(210,50,50,.9); }
+
+  /* 통계 패널 */
+  #stats { position: absolute; right: 8px; top: 52px; z-index: 10; background: rgba(15,17,21,.78); border: 1px solid #2a2f3a; border-radius: 10px; padding: 10px 12px; font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1.75; min-width: 148px; }
+  #stats b { font-size: 20px; color: #7fd4a0; }
+  #stats .dim { color: #8b93a5; }
+  #fpsLog { position: absolute; left: 8px; top: 52px; z-index: 10; background: rgba(15,17,21,.78); border: 1px solid #2a2f3a; border-radius: 10px; padding: 8px 10px; font-size: 11px; line-height: 1.6; color: #8b93a5; max-height: 40dvh; overflow-y: auto; font-variant-numeric: tabular-nums; }
+
+  /* 하단 컨트롤 */
+  #controls { position: absolute; bottom: 0; left: 0; right: 0; padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0)); display: flex; gap: 8px; z-index: 10; background: linear-gradient(transparent, rgba(15,17,21,.9)); }
+  button { flex: 1; padding: 14px 8px; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; background: #2a3142; color: #e6e8ee; }
+  button.primary { background: #3b6ef5; }
+  #overlay { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #0f1115; padding: 24px; text-align: center; }
+  #overlay p { color: #8b93a5; font-size: 14px; line-height: 1.6; }
+  #overlay button { flex: none; padding: 16px 48px; font-size: 17px; }
+  #loadmsg { color: #7fd4a0; font-size: 13px; min-height: 20px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="avatar"></canvas>
+  <video id="video" playsinline muted autoplay></video>
+
+  <div id="banner">대기 중</div>
+
+  <div id="stats">
+    <b id="fps">–</b> <span class="dim">FPS</span><br>
+    추론 <span id="infer">–</span> ms<br>
+    <span class="dim">pitch</span> <span id="pitch">–</span>°<br>
+    <span class="dim">yaw</span> <span id="yaw">–</span>°<br>
+    <span class="dim">경과</span> <span id="elapsed">0:00</span>
+  </div>
+  <div id="fpsLog"><div class="dim">30초마다 FPS 기록</div></div>
+
+  <div id="controls">
+    <button id="toggleRaw">원본 보기</button>
+    <button id="stopBtn">종료</button>
+  </div>
+
+  <div id="overlay">
+    <h2>아바타 마스킹 스파이크</h2>
+    <p>검증: iPhone 브라우저에서 MediaPipe 얼굴 추적 + 아바타 렌더링 + 부재/자세 감지가 실사용 FPS·발열로 도는가.<br><br>
+    폰을 거치대에 두고 <b>10~15분</b> 방치하며 FPS 변화(발열 스로틀링)를 관찰하세요.</p>
+    <button class="primary" id="startBtn">카메라 시작</button>
+    <div id="loadmsg">모델 로딩 준비…</div>
+  </div>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const video = $("video"), canvas = $("avatar"), ctx = canvas.getContext("2d");
+
+// ── 감지 파라미터 (제품에선 캘리브레이션으로 조정) ─────────────
+const ABSENCE_DELAY_MS = 3000;     // 얼굴 미검출이 이 시간 지속되어야 '부재'
+const HEADDOWN_PITCH_DEG = 22;     // 고개 숙임 판정 임계값
+const HEADDOWN_DELAY_MS = 4000;    // 지속 시간 (잠깐 숙이는 건 무시)
+const INFER_INTERVAL_MS = 100;     // 추론 10Hz — 감지 목적엔 충분, 발열 절감의 핵심
+
+let landmarker = null, running = false, startTime = 0;
+let lastVideoTime = -1, lastResult = null;
+let inferTimes = [], frameTimes = [], lastFrameTs = 0, lastInferTs = 0;
+let noFaceSince = null, headDownSince = null;
+let logTimer = null, wakeLock = null;
+// 10Hz 추론 결과를 렌더 프레임에 부드럽게 보간하기 위한 상태
+const sm = { pitch: 0, yaw: 0, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, brow: 0, smile: 0 };
+
+const loadMsg = m => $("loadmsg").textContent = m;
+
+async function init() {
+  loadMsg("WASM 로딩 중…");
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  loadMsg("Face Landmarker 모델 다운로드 중…");
+  landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: true
+  });
+  loadMsg("준비 완료 — 카메라를 시작하세요");
+}
+init().catch(e => loadMsg("모델 로딩 실패: " + e.message));
+
+$("startBtn").onclick = async () => {
+  try {
+    if (!landmarker) { loadMsg("모델이 아직 로딩 중입니다…"); return; }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 24 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    $("overlay").style.display = "none";
+    running = true;
+    startTime = performance.now();
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+    logTimer = setInterval(logFps, 30000);
+    requestAnimationFrame(loop);
+  } catch (e) {
+    loadMsg("카메라 실패: " + e.message);
+  }
+};
+
+$("stopBtn").onclick = () => {
+  running = false;
+  clearInterval(logTimer);
+  wakeLock?.release();
+  video.srcObject?.getTracks().forEach(t => t.stop());
+  $("overlay").style.display = "flex";
+  loadMsg("종료됨 — 좌측 FPS 기록을 확인하세요");
+};
+
+$("toggleRaw").onclick = () => video.classList.toggle("show");
+
+// ── 메인 루프 ──────────────────────────────────────────────
+function loop(ts) {
+  if (!running) return;
+  requestAnimationFrame(loop);
+
+  // FPS 측정
+  if (lastFrameTs) {
+    frameTimes.push(ts - lastFrameTs);
+    if (frameTimes.length > 60) frameTimes.shift();
+  }
+  lastFrameTs = ts;
+
+  // 새 비디오 프레임 + 추론 주기(10Hz)일 때만 추론 — 발열 절감 핵심
+  if (video.currentTime !== lastVideoTime && video.readyState >= 2 && ts - lastInferTs >= INFER_INTERVAL_MS) {
+    lastVideoTime = video.currentTime;
+    lastInferTs = ts;
+    const t0 = performance.now();
+    lastResult = landmarker.detectForVideo(video, t0);
+    inferTimes.push(performance.now() - t0);
+    if (inferTimes.length > 60) inferTimes.shift();
+  }
+
+  const now = performance.now();
+  const face = lastResult?.faceLandmarks?.[0] ?? null;
+  let pitch = 0, yaw = 0, roll = 0;
+
+  if (face && lastResult.facialTransformationMatrixes?.[0]) {
+    const m = lastResult.facialTransformationMatrixes[0].data; // column-major 4x4
+    const R = (r, c) => m[c * 4 + r];
+    pitch = Math.atan2(R(2,1), R(2,2)) * 180 / Math.PI;
+    yaw   = Math.atan2(-R(2,0), Math.hypot(R(2,1), R(2,2))) * 180 / Math.PI;
+    roll  = Math.atan2(R(1,0), R(0,0)) * 180 / Math.PI;
+  }
+
+  // ── 감지 로직: 임계값 + 시간 지연 (오탐 방지) ──
+  let state = "focused", msg = "🟢 집중 감지 중";
+  if (!face) {
+    noFaceSince ??= now;
+    headDownSince = null;
+    if (now - noFaceSince > ABSENCE_DELAY_MS) { state = "alert"; msg = "🔴 부재 감지 — 자리를 비웠어요"; }
+    else msg = "⚪ 얼굴 찾는 중…";
+  } else {
+    noFaceSince = null;
+    if (pitch < -HEADDOWN_PITCH_DEG || pitch > HEADDOWN_PITCH_DEG) {
+      headDownSince ??= now;
+      if (now - headDownSince > HEADDOWN_DELAY_MS) { state = "warn"; msg = "🟠 고개 숙임 지속 — 졸리신가요?"; }
+    } else headDownSince = null;
+  }
+  const banner = $("banner");
+  banner.textContent = msg;
+  banner.className = state === "alert" ? "alert" : state === "warn" ? "warn" : "";
+
+  // 10Hz 추론값 → 렌더 프레임 보간 (아바타가 끊겨 보이지 않게)
+  const getBs = n => lastResult?.faceBlendshapes?.[0]?.categories?.find(c => c.categoryName === n)?.score ?? 0;
+  const target = {
+    pitch, yaw, roll,
+    blinkL: getBs("eyeBlinkLeft"), blinkR: getBs("eyeBlinkRight"),
+    jaw: getBs("jawOpen"), brow: getBs("browInnerUp"),
+    smile: (getBs("mouthSmileLeft") + getBs("mouthSmileRight")) / 2
+  };
+  for (const k in target) sm[k] += (target[k] - sm[k]) * 0.35;
+
+  drawAvatar(face, sm);
+  updateStats(pitch, yaw, now);
+}
+
+// ── 아바타 렌더링 (간단 2D — 마스킹 개념 증명) ─────────────
+function drawAvatar(face, s) {
+  const dpr = Math.min(devicePixelRatio, 1.5);     // 픽셀 수 제한 — GPU/발열 절감
+  const w = canvas.width = canvas.clientWidth * dpr;
+  const h = canvas.height = canvas.clientHeight * dpr;
+  ctx.fillStyle = "#171a21"; ctx.fillRect(0, 0, w, h);
+
+  if (!face) {
+    ctx.fillStyle = "#3a4152"; ctx.font = `${w/16}px sans-serif`; ctx.textAlign = "center";
+    ctx.fillText("(자리 비움)", w/2, h/2);
+    return;
+  }
+  const { blinkL, blinkR, jaw, brow, smile, pitch, yaw, roll } = s;
+
+  const cx = w/2 + (-yaw/45) * w * 0.12;           // yaw → 좌우 이동
+  const cy = h/2 + (pitch/45) * h * 0.10;          // pitch → 상하 이동
+  const Rh = Math.min(w, h) * 0.27;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-roll * Math.PI / 180);
+
+  // 머리
+  ctx.fillStyle = "#f5c96b";
+  ctx.beginPath(); ctx.ellipse(0, 0, Rh, Rh * 1.12, 0, 0, 7); ctx.fill();
+  // 귀(장식 — 코스메틱 자리)
+  ctx.fillStyle = "#e8a84c";
+  ctx.beginPath(); ctx.ellipse(-Rh*.82, -Rh*.85, Rh*.28, Rh*.34, -.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( Rh*.82, -Rh*.85, Rh*.28, Rh*.34, .4, 0, 7); ctx.fill();
+
+  // 눈 (깜빡임 반영)
+  const eyeY = -Rh * 0.12, eyeDX = Rh * 0.38;
+  for (const [dx, blink] of [[-eyeDX, blinkL], [eyeDX, blinkR]]) {
+    const openness = Math.max(0.06, 1 - blink * 1.15);
+    ctx.fillStyle = "#22262f";
+    ctx.beginPath(); ctx.ellipse(dx, eyeY, Rh*.13, Rh*.13*openness + Rh*.015, 0, 0, 7); ctx.fill();
+  }
+  // 눈썹 (browInnerUp 반영)
+  ctx.strokeStyle = "#8a5a24"; ctx.lineWidth = Rh*.05; ctx.lineCap = "round";
+  for (const dx of [-eyeDX, eyeDX]) {
+    ctx.beginPath();
+    ctx.moveTo(dx - Rh*.14, eyeY - Rh*.22 - brow*Rh*.12);
+    ctx.lineTo(dx + Rh*.14, eyeY - Rh*.24 - brow*Rh*.14);
+    ctx.stroke();
+  }
+  // 입 (jawOpen + smile 반영)
+  ctx.fillStyle = "#8a3d2e";
+  ctx.beginPath();
+  ctx.ellipse(0, Rh*.45 + jaw*Rh*.08, Rh*(.16 + smile*.10), Rh*(.05 + jaw*.28), 0, 0, 7);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── 통계 표시 & 기록 ──────────────────────────────────────
+const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+function updateStats(pitch, yaw, now) {
+  const fps = frameTimes.length ? 1000 / avg(frameTimes) : 0;
+  $("fps").textContent = fps.toFixed(0);
+  $("fps").style.color = fps >= 15 ? "#7fd4a0" : fps >= 10 ? "#e8b84c" : "#e86a5a";
+  $("infer").textContent = avg(inferTimes).toFixed(1);
+  $("pitch").textContent = pitch.toFixed(0);
+  $("yaw").textContent = yaw.toFixed(0);
+  const s = Math.floor((now - startTime) / 1000);
+  $("elapsed").textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+}
+function logFps() {
+  const fps = frameTimes.length ? 1000 / avg(frameTimes) : 0;
+  const s = Math.floor((performance.now() - startTime) / 1000);
+  const row = document.createElement("div");
+  row.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")} → ${fps.toFixed(0)} fps / ${avg(inferTimes).toFixed(0)} ms`;
+  $("fpsLog").appendChild(row);
+}
+</script>
+</body>
+</html>
