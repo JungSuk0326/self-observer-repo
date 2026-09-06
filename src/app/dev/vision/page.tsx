@@ -3,10 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import AvatarCanvas from "@/components/AvatarCanvas";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
+import { AVATAR_PRESETS, getPresetById } from "@/lib/avatar/presets";
+import { Calibrator, applyBaseline } from "@/lib/detection/calibration";
 import { DetectionEngine } from "@/lib/detection/detectionEngine";
 import type { FocusState } from "@/lib/detection/types";
 import { SessionEngine } from "@/lib/session/sessionEngine";
 import type { SessionSnapshot, SessionSummary } from "@/lib/session/types";
+import type { HeadPose } from "@/lib/vision/types";
+
+const PRESET_STORAGE_KEY = "fg.avatarPreset";
+const CALIBRATION_STORAGE_KEY = "fg.calibration";
 
 const STATE_BANNER: Record<FocusState, { label: string; className: string }> = {
   initializing: { label: "⚪ 얼굴 찾는 중…", className: "bg-gray-700/90" },
@@ -35,6 +41,39 @@ export default function VisionDevPage() {
   const [focusState, setFocusState] = useState<FocusState>("initializing");
   const [sessionSnap, setSessionSnap] = useState<SessionSnapshot | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [presetId, setPresetId] = useState("bear");
+  const [baseline, setBaseline] = useState<HeadPose | null>(null);
+  const calibratorRef = useRef<Calibrator | null>(null);
+  const [calProgress, setCalProgress] = useState<number | null>(null); // null = 캘리브레이션 아님
+
+  // 저장된 아바타/캘리브레이션 복원 — SSR 불일치를 피해 이벤트(카메라 시작)에서 수행
+  const restoreSaved = () => {
+    try {
+      const savedPreset = localStorage.getItem(PRESET_STORAGE_KEY);
+      if (savedPreset) setPresetId(getPresetById(savedPreset).id);
+      const savedCal = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+      if (savedCal) setBaseline(JSON.parse(savedCal) as HeadPose);
+    } catch {
+      // 저장소 접근 불가 — 기본값으로 진행
+    }
+  };
+
+  const handleStart = () => {
+    restoreSaved();
+    void start();
+  };
+
+  const selectPreset = (id: string) => {
+    setPresetId(id);
+    try {
+      localStorage.setItem(PRESET_STORAGE_KEY, id);
+    } catch {}
+  };
+
+  const startCalibration = () => {
+    calibratorRef.current = new Calibrator(15); // 5Hz × 3초
+    setCalProgress(0);
+  };
 
   // 5Hz: 신호 → 감지 엔진 → 세션 엔진 → UI 상태
   useEffect(() => {
@@ -43,9 +82,30 @@ export default function VisionDevPage() {
     const timer = setInterval(() => {
       const s = signalRef.current;
       if (!s) return;
+
+      // 캘리브레이션 중: 얼굴이 보이는 프레임만 샘플링
+      const calibrator = calibratorRef.current;
+      if (calibrator) {
+        if (s.present) {
+          const progress = calibrator.addSample(s.pose);
+          setCalProgress(progress);
+          if (calibrator.isComplete) {
+            const result = calibrator.getBaseline();
+            setBaseline(result);
+            calibratorRef.current = null;
+            setCalProgress(null);
+            try {
+              localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(result));
+            } catch {}
+          }
+        }
+        return; // 캘리브레이션 동안은 감지/세션 갱신 중단
+      }
+
+      const corrected = applyBaseline(s.pose, baseline);
       const { state } = engine.update({
         present: s.present,
-        pitch: s.pose.pitch,
+        pitch: corrected.pitch,
         timestamp: s.timestamp,
       });
       setFocusState(state);
@@ -60,7 +120,7 @@ export default function VisionDevPage() {
       engine.reset();
       setFocusState("initializing");
     };
-  }, [status, signalRef]);
+  }, [status, signalRef, baseline]);
 
   const now = () => signalRef.current?.timestamp ?? performance.now();
 
@@ -96,7 +156,11 @@ export default function VisionDevPage() {
 
   return (
     <main className="relative flex h-dvh flex-col bg-[#0f1115] text-gray-100">
-      <AvatarCanvas signalRef={signalRef} className="min-h-0 w-full flex-1" />
+      <AvatarCanvas
+        signalRef={signalRef}
+        preset={getPresetById(presetId)}
+        className="min-h-0 w-full flex-1"
+      />
 
       {/* 감지 상태 배너 */}
       {status === "running" && (
@@ -141,10 +205,52 @@ export default function VisionDevPage() {
           <br />
           추론 {(stats?.inferMs ?? 0).toFixed(1)} ms
           <br />
-          <span className="text-gray-400">pitch</span>{" "}
-          {(signal?.pose.pitch ?? 0).toFixed(0)}°{" "}
+          <span className="text-gray-400">pitch{baseline ? "(보정)" : ""}</span>{" "}
+          {(signal ? applyBaseline(signal.pose, baseline).pitch : 0).toFixed(0)}°{" "}
           <span className="text-gray-400">yaw</span>{" "}
           {(signal?.pose.yaw ?? 0).toFixed(0)}°
+        </div>
+      )}
+
+      {/* 캘리브레이션 진행 오버레이 */}
+      {calProgress !== null && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-black/70 p-6 text-center">
+          <p className="text-lg font-bold">카메라를 정면으로 바라봐 주세요</p>
+          <div className="h-2 w-56 overflow-hidden rounded-full bg-gray-700">
+            <div
+              className="h-full rounded-full bg-blue-500 transition-all"
+              style={{ width: `${Math.round(calProgress * 100)}%` }}
+            />
+          </div>
+          <p className="text-sm text-gray-400">
+            평소 공부하는 자세 기준을 저장합니다 ({Math.round(calProgress * 100)}%)
+          </p>
+        </div>
+      )}
+
+      {/* 아바타 선택 + 캘리브레이션 (세션 밖에서만) */}
+      {status === "running" && !inSession && calProgress === null && (
+        <div className="absolute bottom-20 left-0 right-0 z-10 flex items-center justify-center gap-2">
+          {AVATAR_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => selectPreset(p.id)}
+              aria-label={p.name}
+              className={`rounded-full border-2 px-3 py-2 text-xl transition-colors ${
+                presetId === p.id
+                  ? "border-blue-500 bg-blue-500/20"
+                  : "border-gray-700 bg-black/50"
+              }`}
+            >
+              {p.emoji}
+            </button>
+          ))}
+          <button
+            onClick={startCalibration}
+            className="ml-2 rounded-full border-2 border-gray-700 bg-black/50 px-3 py-2 text-sm font-semibold"
+          >
+            {baseline ? "🎯 재캘리브레이션" : "🎯 캘리브레이션"}
+          </button>
         </div>
       )}
 
@@ -233,7 +339,7 @@ export default function VisionDevPage() {
           )
         ) : (
           <button
-            onClick={start}
+            onClick={handleStart}
             disabled={status === "loading"}
             className="flex-1 rounded-xl bg-blue-600 py-3.5 font-bold disabled:opacity-50"
           >

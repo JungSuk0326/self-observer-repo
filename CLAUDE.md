@@ -15,7 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ 비전 파이프라인 모듈화: `src/lib/vision/`(React 비의존 FaceTracker — 10Hz 추론·보간·통계) + `src/hooks/useFaceTracking.ts`(신호는 ref로 60fps, React 리렌더는 5Hz만) + `src/components/AvatarCanvas.tsx`(임시 아트). 검증 페이지: `/dev/vision`. iPhone 실기 검증 완료.
 - ✅ 감지 엔진: `src/lib/detection/` — 부재/고개숙임 상태 머신, 임계값+지연 오탐 방지. 순수 로직(시간은 입력 timestamp로만 흐름 → 테스트에서 시간 조작 가능), vitest 12케이스.
 - ✅ 세션 엔진: `src/lib/session/` — idle/running/paused/ended 상태 머신, 집중/이탈/휴식 시간 집계, 이탈 횟수, 목표 시간, SessionSummary(리포트 G-1 입력). 같은 순수 로직 패턴, vitest 13케이스.
-- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 4번(아바타)부터.
+- ✅ 아바타: `src/lib/avatar/presets.ts` — 파라미터 구동 프리셋 3종(베어/캣/버니), AvatarCanvas가 프리셋 렌더링(코스메틱 확장 슬롯). 캘리브레이션 `src/lib/detection/calibration.ts` — 정면 응시 중앙값 baseline(이상치 강건), 감지 입력에 보정 적용, localStorage 저장.
+- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 5번(규칙기반 메시지)부터.
 
 ```bash
 npm run dev      # 개발 서버 (localhost:3000)
