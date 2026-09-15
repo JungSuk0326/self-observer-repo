@@ -7,12 +7,23 @@ import { AVATAR_PRESETS, getPresetById } from "@/lib/avatar/presets";
 import { Calibrator, applyBaseline } from "@/lib/detection/calibration";
 import { DetectionEngine } from "@/lib/detection/detectionEngine";
 import type { FocusState } from "@/lib/detection/types";
+import { MessageEngine } from "@/lib/message/messageEngine";
+import { createSpeaker, type Speaker } from "@/lib/message/speech";
+import type { MessageTone, SupervisorMessage } from "@/lib/message/types";
 import { SessionEngine } from "@/lib/session/sessionEngine";
 import type { SessionSnapshot, SessionSummary } from "@/lib/session/types";
 import type { HeadPose } from "@/lib/vision/types";
 
 const PRESET_STORAGE_KEY = "fg.avatarPreset";
 const CALIBRATION_STORAGE_KEY = "fg.calibration";
+const VOICE_STORAGE_KEY = "fg.voice";
+/** 토스트 표시 시간 — 경고는 조금 더 오래 */
+const TOAST_MS: Record<MessageTone, number> = { warn: 6000, encourage: 4000, info: 3500 };
+const TOAST_STYLE: Record<MessageTone, string> = {
+  warn: "border-amber-500/60 bg-amber-950/90",
+  encourage: "border-emerald-500/60 bg-emerald-950/90",
+  info: "border-sky-500/60 bg-sky-950/90",
+};
 
 const STATE_BANNER: Record<FocusState, { label: string; className: string }> = {
   initializing: { label: "⚪ 얼굴 찾는 중…", className: "bg-gray-700/90" },
@@ -45,6 +56,13 @@ export default function VisionDevPage() {
   const [baseline, setBaseline] = useState<HeadPose | null>(null);
   const calibratorRef = useRef<Calibrator | null>(null);
   const [calProgress, setCalProgress] = useState<number | null>(null); // null = 캘리브레이션 아님
+  const messageEngineRef = useRef(new MessageEngine());
+  const speakerRef = useRef<Speaker | null>(null);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const voiceOnRef = useRef(false); // 5Hz 루프가 리렌더 없이 읽는 값
+  const [toast, setToast] = useState<SupervisorMessage | null>(null);
+  const [messageLog, setMessageLog] = useState<SupervisorMessage[]>([]);
+  const [showLog, setShowLog] = useState(false);
 
   // 저장된 아바타/캘리브레이션 복원 — SSR 불일치를 피해 이벤트(카메라 시작)에서 수행
   const restoreSaved = () => {
@@ -53,6 +71,13 @@ export default function VisionDevPage() {
       if (savedPreset) setPresetId(getPresetById(savedPreset).id);
       const savedCal = localStorage.getItem(CALIBRATION_STORAGE_KEY);
       if (savedCal) setBaseline(JSON.parse(savedCal) as HeadPose);
+      // 음성은 iOS 제스처 제약 때문에 저장값이 켜짐이어도 카메라 시작 클릭에서 unlock
+      if (localStorage.getItem(VOICE_STORAGE_KEY) === "1") {
+        speakerRef.current ??= createSpeaker();
+        speakerRef.current.unlock();
+        voiceOnRef.current = true;
+        setVoiceOn(true);
+      }
     } catch {
       // 저장소 접근 불가 — 기본값으로 진행
     }
@@ -75,10 +100,40 @@ export default function VisionDevPage() {
     setCalProgress(0);
   };
 
+  // 음성 토글 — 클릭(제스처) 안에서 unlock해야 iOS에서 이후 speak가 허용됨
+  const toggleVoice = () => {
+    const next = !voiceOn;
+    speakerRef.current ??= createSpeaker();
+    if (next) speakerRef.current.unlock();
+    else speakerRef.current.cancel();
+    voiceOnRef.current = next;
+    setVoiceOn(next);
+    try {
+      localStorage.setItem(VOICE_STORAGE_KEY, next ? "1" : "0");
+    } catch {}
+  };
+
+  /** 메시지 엔진 출력 → 토스트/로그/음성 */
+  const deliver = (messages: SupervisorMessage[]) => {
+    if (messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    setToast(last);
+    setMessageLog((log) => [...[...messages].reverse(), ...log].slice(0, 30));
+    if (voiceOnRef.current) speakerRef.current?.speak(last.text);
+  };
+
+  // 토스트 자동 숨김
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), TOAST_MS[toast.tone]);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   // 5Hz: 신호 → 감지 엔진 → 세션 엔진 → UI 상태
   useEffect(() => {
     if (status !== "running") return;
     const engine = engineRef.current;
+    const messageEngine = messageEngineRef.current;
     const timer = setInterval(() => {
       const s = signalRef.current;
       if (!s) return;
@@ -103,21 +158,25 @@ export default function VisionDevPage() {
       }
 
       const corrected = applyBaseline(s.pose, baseline);
-      const { state } = engine.update({
+      const { state, events } = engine.update({
         present: s.present,
         pitch: corrected.pitch,
         timestamp: s.timestamp,
       });
       setFocusState(state);
       const session = sessionRef.current;
+      let snap: SessionSnapshot | null = null;
       if (session) {
         session.update(s.timestamp, state);
-        setSessionSnap(session.getSnapshot());
+        snap = session.getSnapshot();
+        setSessionSnap(snap);
       }
+      deliver(messageEngine.update({ timestamp: s.timestamp, events, session: snap }));
     }, 200);
     return () => {
       clearInterval(timer);
       engine.reset();
+      messageEngine.reset();
       setFocusState("initializing");
     };
   }, [status, signalRef, baseline]);
@@ -146,6 +205,8 @@ export default function VisionDevPage() {
     setSummary(session.end(now()));
     sessionRef.current = null;
     setSessionSnap(null);
+    setToast(null);
+    speakerRef.current?.cancel();
   };
 
   const fps = stats?.fps ?? 0;
@@ -183,6 +244,36 @@ export default function VisionDevPage() {
             <br />
             자리비움 {sessionSnap.awayCount}회 · 고개숙임 {sessionSnap.headDownCount}회
           </div>
+        </div>
+      )}
+
+      {/* 감독관 메시지 토스트 (D-5) */}
+      {toast && (
+        <div
+          key={toast.at}
+          role="status"
+          className={`absolute inset-x-3 top-32 z-10 mx-auto max-w-sm rounded-2xl border px-4 py-3 text-sm font-medium shadow-lg ${TOAST_STYLE[toast.tone]}`}
+        >
+          <span className="mr-1.5">
+            {toast.tone === "warn" ? "🔔" : toast.tone === "encourage" ? "💚" : "💬"}
+          </span>
+          {toast.text}
+        </div>
+      )}
+
+      {/* 메시지 로그 (검증용) */}
+      {showLog && (
+        <div className="absolute inset-x-3 bottom-36 z-10 mx-auto max-h-48 max-w-sm overflow-y-auto rounded-xl border border-gray-700 bg-black/80 p-3 text-xs leading-relaxed">
+          {messageLog.length === 0 ? (
+            <p className="text-gray-500">아직 메시지 없음</p>
+          ) : (
+            messageLog.map((m) => (
+              <p key={`${m.at}-${m.kind}`} className="truncate">
+                <span className="text-gray-500">{formatMs(m.at)}</span>{" "}
+                <span className="text-gray-400">[{m.kind}]</span> {m.text}
+              </p>
+            ))
+          )}
         </div>
       )}
 
@@ -303,6 +394,22 @@ export default function VisionDevPage() {
           inSession ? (
             <>
               <button
+                onClick={toggleVoice}
+                aria-label="음성 안내"
+                aria-pressed={voiceOn}
+                className={`rounded-xl px-3.5 py-3.5 text-lg ${voiceOn ? "bg-emerald-700" : "bg-gray-700"}`}
+              >
+                {voiceOn ? "🔊" : "🔇"}
+              </button>
+              <button
+                onClick={() => setShowLog((v) => !v)}
+                aria-label="메시지 로그"
+                aria-pressed={showLog}
+                className={`rounded-xl px-3.5 py-3.5 text-lg ${showLog ? "bg-gray-500" : "bg-gray-700"}`}
+              >
+                📜
+              </button>
+              <button
                 onClick={togglePause}
                 className="flex-1 rounded-xl bg-sky-700 py-3.5 font-bold"
               >
@@ -317,6 +424,14 @@ export default function VisionDevPage() {
             </>
           ) : (
             <>
+              <button
+                onClick={toggleVoice}
+                aria-label="음성 안내"
+                aria-pressed={voiceOn}
+                className={`rounded-xl px-3.5 py-3.5 text-lg ${voiceOn ? "bg-emerald-700" : "bg-gray-700"}`}
+              >
+                {voiceOn ? "🔊" : "🔇"}
+              </button>
               <button
                 onClick={startSession}
                 className="flex-[2] rounded-xl bg-blue-600 py-3.5 font-bold"

@@ -16,7 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ 감지 엔진: `src/lib/detection/` — 부재/고개숙임 상태 머신, 임계값+지연 오탐 방지. 순수 로직(시간은 입력 timestamp로만 흐름 → 테스트에서 시간 조작 가능), vitest 12케이스.
 - ✅ 세션 엔진: `src/lib/session/` — idle/running/paused/ended 상태 머신, 집중/이탈/휴식 시간 집계, 이탈 횟수, 목표 시간, SessionSummary(리포트 G-1 입력). 같은 순수 로직 패턴, vitest 13케이스.
 - ✅ 아바타: `src/lib/avatar/presets.ts` — 파라미터 구동 프리셋 3종(베어/캣/버니), AvatarCanvas가 프리셋 렌더링(코스메틱 확장 슬롯). 캘리브레이션 `src/lib/detection/calibration.ts` — 정면 응시 중앙값 baseline(이상치 강건), 감지 입력에 보정 적용, localStorage 저장.
-- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 5번(규칙기반 메시지)부터.
+- ✅ 규칙기반 메시지: `src/lib/message/` — MessageEngine(순수 로직): 감지 이벤트+세션 스냅샷 → 감독관 메시지. 경고는 종류별 쿨다운(기본 45s) 안이면 억제하되 횟수는 세어 문구 단계를 올림, 복귀 격려는 경고가 실제로 나간 이탈에만, 장시간 부재(5분) 제안 1회, 집중 이정표(15분 간격)·목표 달성 격려. 문구는 `messages.ts`(존댓말, 부드러운 감독관 톤). `speech.ts`는 Web Speech 어댑터(iOS는 사용자 제스처 안에서 `unlock()` 필수). vitest 15케이스. `/dev/vision`에 토스트·로그·음성 토글 연결.
+- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 6번(온보딩)부터.
 
 ```bash
 npm run dev      # 개발 서버 (localhost:3000)
