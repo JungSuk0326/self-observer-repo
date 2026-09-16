@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CameraSetupError,
+  checkCameraAvailability,
+  classifyCameraError,
+  type CameraFailure,
+} from "@/lib/vision/cameraError";
 import { CAMERA_CONSTRAINTS, FaceTracker } from "@/lib/vision/faceTracker";
 import type { FaceSignal, TrackerStats } from "@/lib/vision/types";
 
@@ -18,7 +24,10 @@ export interface UseFaceTrackingResult {
   signal: FaceSignal | null;
   stats: TrackerStats | null;
   status: TrackingStatus;
+  /** 개발용 원문 메시지 */
   error: string | null;
+  /** 실패 원인 분류 — 온보딩 대체 흐름 분기용 (A-3) */
+  failure: CameraFailure | null;
   start: () => Promise<void>;
   stop: () => void;
 }
@@ -38,6 +47,7 @@ export function useFaceTracking(): UseFaceTrackingResult {
 
   const [status, setStatus] = useState<TrackingStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<CameraFailure | null>(null);
   const [signal, setSignal] = useState<FaceSignal | null>(null);
   const [stats, setStats] = useState<TrackerStats | null>(null);
 
@@ -62,12 +72,36 @@ export function useFaceTracking(): UseFaceTrackingResult {
     if (status === "loading" || status === "running") return;
     setStatus("loading");
     setError(null);
+    setFailure(null);
     try {
-      // 모델 로딩과 카메라 권한 요청을 병렬로
-      const [tracker, stream] = await Promise.all([
-        FaceTracker.create(),
+      // 권한 프롬프트 전에 걸러낼 수 있는 실패(HTTPS 아님 등)를 먼저 확인
+      const unavailable = checkCameraAvailability();
+      if (unavailable) {
+        throw new CameraSetupError(unavailable, "카메라 API를 사용할 수 없음");
+      }
+
+      // 모델 로딩과 카메라 권한 요청을 병렬로. 한쪽이 실패해도 다른 쪽 자원은
+      // 반드시 정리해야 한다 — 떠 있는 카메라 트랙은 인디케이터가 켜진 채 남는다.
+      const [trackerResult, streamResult] = await Promise.allSettled([
+        FaceTracker.create().catch((e: unknown) => {
+          throw new CameraSetupError(
+            "model",
+            e instanceof Error ? e.message : String(e),
+          );
+        }),
         navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS),
       ]);
+      // 둘 다 실패했다면 카메라 쪽을 먼저 알린다 — 사용자가 고쳐야 하는 건 그쪽
+      if (streamResult.status === "rejected") {
+        if (trackerResult.status === "fulfilled") trackerResult.value.close();
+        throw streamResult.reason;
+      }
+      if (trackerResult.status === "rejected") {
+        streamResult.value.getTracks().forEach((t) => t.stop());
+        throw trackerResult.reason;
+      }
+      const tracker = trackerResult.value;
+      const stream = streamResult.value;
       const video = videoRef.current;
       if (!video) throw new Error("video element가 마운트되지 않음");
       video.srcObject = stream;
@@ -95,6 +129,7 @@ export function useFaceTracking(): UseFaceTrackingResult {
     } catch (e) {
       stop();
       setError(e instanceof Error ? e.message : String(e));
+      setFailure(classifyCameraError(e));
       setStatus("error");
     }
   }, [status, stop]);
@@ -102,5 +137,5 @@ export function useFaceTracking(): UseFaceTrackingResult {
   // 언마운트 시 자원 해제
   useEffect(() => stop, [stop]);
 
-  return { videoRef, signalRef, signal, stats, status, error, start, stop };
+  return { videoRef, signalRef, signal, stats, status, error, failure, start, stop };
 }

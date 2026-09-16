@@ -11,12 +11,17 @@ import { MessageEngine } from "@/lib/message/messageEngine";
 import { createSpeaker, type Speaker } from "@/lib/message/speech";
 import type { MessageTone, SupervisorMessage } from "@/lib/message/types";
 import { SessionEngine } from "@/lib/session/sessionEngine";
+import {
+  loadAvatarId,
+  loadCalibration,
+  loadVoiceEnabled,
+  saveAvatarId,
+  saveCalibration,
+  saveVoiceEnabled,
+} from "@/lib/storage";
 import type { SessionSnapshot, SessionSummary } from "@/lib/session/types";
 import type { HeadPose } from "@/lib/vision/types";
 
-const PRESET_STORAGE_KEY = "fg.avatarPreset";
-const CALIBRATION_STORAGE_KEY = "fg.calibration";
-const VOICE_STORAGE_KEY = "fg.voice";
 /** 토스트 표시 시간 — 경고는 조금 더 오래 */
 const TOAST_MS: Record<MessageTone, number> = { warn: 6000, encourage: 4000, info: 3500 };
 const TOAST_STYLE: Record<MessageTone, string> = {
@@ -66,20 +71,16 @@ export default function VisionDevPage() {
 
   // 저장된 아바타/캘리브레이션 복원 — SSR 불일치를 피해 이벤트(카메라 시작)에서 수행
   const restoreSaved = () => {
-    try {
-      const savedPreset = localStorage.getItem(PRESET_STORAGE_KEY);
-      if (savedPreset) setPresetId(getPresetById(savedPreset).id);
-      const savedCal = localStorage.getItem(CALIBRATION_STORAGE_KEY);
-      if (savedCal) setBaseline(JSON.parse(savedCal) as HeadPose);
-      // 음성은 iOS 제스처 제약 때문에 저장값이 켜짐이어도 카메라 시작 클릭에서 unlock
-      if (localStorage.getItem(VOICE_STORAGE_KEY) === "1") {
-        speakerRef.current ??= createSpeaker();
-        speakerRef.current.unlock();
-        voiceOnRef.current = true;
-        setVoiceOn(true);
-      }
-    } catch {
-      // 저장소 접근 불가 — 기본값으로 진행
+    const savedPreset = loadAvatarId();
+    if (savedPreset) setPresetId(getPresetById(savedPreset).id);
+    const savedCal = loadCalibration();
+    if (savedCal) setBaseline(savedCal);
+    // 음성은 iOS 제스처 제약 때문에 저장값이 켜짐이어도 카메라 시작 클릭에서 unlock
+    if (loadVoiceEnabled()) {
+      speakerRef.current ??= createSpeaker();
+      speakerRef.current.unlock();
+      voiceOnRef.current = true;
+      setVoiceOn(true);
     }
   };
 
@@ -90,9 +91,7 @@ export default function VisionDevPage() {
 
   const selectPreset = (id: string) => {
     setPresetId(id);
-    try {
-      localStorage.setItem(PRESET_STORAGE_KEY, id);
-    } catch {}
+    saveAvatarId(id);
   };
 
   const startCalibration = () => {
@@ -108,9 +107,7 @@ export default function VisionDevPage() {
     else speakerRef.current.cancel();
     voiceOnRef.current = next;
     setVoiceOn(next);
-    try {
-      localStorage.setItem(VOICE_STORAGE_KEY, next ? "1" : "0");
-    } catch {}
+    saveVoiceEnabled(next);
   };
 
   /** 메시지 엔진 출력 → 토스트/로그/음성 */
@@ -146,12 +143,12 @@ export default function VisionDevPage() {
           setCalProgress(progress);
           if (calibrator.isComplete) {
             const result = calibrator.getBaseline();
-            setBaseline(result);
             calibratorRef.current = null;
             setCalProgress(null);
-            try {
-              localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(result));
-            } catch {}
+            if (result) {
+              setBaseline(result);
+              saveCalibration(result);
+            }
           }
         }
         return; // 캘리브레이션 동안은 감지/세션 갱신 중단

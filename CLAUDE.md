@@ -17,13 +17,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ 세션 엔진: `src/lib/session/` — idle/running/paused/ended 상태 머신, 집중/이탈/휴식 시간 집계, 이탈 횟수, 목표 시간, SessionSummary(리포트 G-1 입력). 같은 순수 로직 패턴, vitest 13케이스.
 - ✅ 아바타: `src/lib/avatar/presets.ts` — 파라미터 구동 프리셋 3종(베어/캣/버니), AvatarCanvas가 프리셋 렌더링(코스메틱 확장 슬롯). 캘리브레이션 `src/lib/detection/calibration.ts` — 정면 응시 중앙값 baseline(이상치 강건), 감지 입력에 보정 적용, localStorage 저장.
 - ✅ 규칙기반 메시지: `src/lib/message/` — MessageEngine(순수 로직): 감지 이벤트+세션 스냅샷 → 감독관 메시지. 경고는 종류별 쿨다운(기본 45s) 안이면 억제하되 횟수는 세어 문구 단계를 올림, 복귀 격려는 경고가 실제로 나간 이탈에만, 장시간 부재(5분) 제안 1회, 집중 이정표(15분 간격)·목표 달성 격려. 문구는 `messages.ts`(존댓말, 부드러운 감독관 톤). `speech.ts`는 Web Speech 어댑터(iOS는 사용자 제스처 안에서 `unlock()` 필수). vitest 15케이스. `/dev/vision`에 토스트·로그·음성 토글 연결.
-- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 6번(온보딩)부터.
+- ✅ 온보딩: 랜딩 `/`(가치 소개 + 게스트 CTA) → `/session`. **온보딩과 세션은 한 페이지**다 — 라우팅으로 화면을 갈아타면 카메라 스트림과 모델이 재초기화되어 권한을 다시 묻게 된다. `src/lib/onboarding/`(OnboardingMachine 순수 로직: welcome→requesting→avatar→calibration→ready→session, 실패는 단계가 아니라 원인으로 분기, 재방문자는 저장된 설정만큼 단계 건너뛰기, 세션 중 카메라 끊김은 일시정지 후 세션 단계로 복귀, 얼굴 미검출은 지연 후 재배치 가이드) + `src/lib/vision/cameraError.ts`(권한거부/장치없음/점유/HTTPS/미지원/모델 6종 분류 → 원인별 안내) + `src/lib/storage.ts`(localStorage 키 통합) + `src/lib/format.ts`. UI는 `src/components/onboarding/`·`src/components/session/`. vitest 81케이스, 헤드리스 Chrome으로 거부·모델실패·정상 흐름 전 구간 확인.
+- ⬜ 다음 작업: [기능명세-유즈케이스.md](기능명세-유즈케이스.md) "4. MVP 개발 순서"의 7번(리포트 + IndexedDB 저장)부터.
 
 ```bash
 npm run dev      # 개발 서버 (localhost:3000)
 npm run build    # 프로덕션 빌드 (변경 검증에 사용)
 npm run lint     # ESLint
-npm test         # vitest (감지 엔진 등 순수 로직 단위 테스트)
+npm test         # vitest (감지/세션/메시지/온보딩 등 순수 로직 단위 테스트)
 ```
 
 폰 테스트 방법: `npm run dev` + `cloudflared tunnel --url http://localhost:3000` 로 임시 HTTPS 주소 발급 (카메라 API는 HTTPS 필수).
