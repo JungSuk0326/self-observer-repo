@@ -27,7 +27,9 @@ npm run lint     # ESLint
 npm test         # vitest (감지/세션/메시지/온보딩 등 순수 로직 단위 테스트)
 ```
 
-폰 테스트 방법: `npm run dev` + `cloudflared tunnel --url http://localhost:3000` 로 임시 HTTPS 주소 발급 (카메라 API는 HTTPS 필수).
+폰 테스트 방법: `npm run dev` + `cloudflared tunnel --url http://localhost:3000` 로 임시 HTTPS 주소 발급 (카메라 API는 HTTPS 필수). 터널 주소는 연결이 끊기면 통째로 바뀐다.
+
+배포: **GitHub Pages** — https://jungsuk0326.github.io/self-observer-repo/ (main 푸시 시 `.github/workflows/deploy-pages.yml`이 자동 배포). 서버 로직이 없어 정적 export로 통째로 올라간다. `output: "export"`·`basePath`는 CI에서 `PAGES_BASE_PATH`가 있을 때만 켜지므로 **로컬 dev는 루트 경로 그대로**다 — 이 조건을 없애면 폰 터널 테스트 주소가 하위 경로로 바뀐다.
 
 ## 기술 스택 (Web-Native, 계획)
 

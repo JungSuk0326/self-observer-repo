@@ -1,0 +1,61 @@
+# GitHub Pages 배포 — 정적 export를 그대로 올린다.
+# 서버가 없으므로 빌드 산출물(out/)이 곧 사이트다.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 대시보드에서 수동 재배포
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 겹치지 않게, 진행 중인 건 끝까지 보낸다
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - run: npm ci
+
+      # 순수 로직 테스트 — 깨진 판정 로직을 배포하지 않는다
+      - run: npm test
+
+      - name: Build static export
+        env:
+          # 프로젝트 사이트는 하위 경로(/self-observer-repo)에 올라가므로 basePath가 필요하다
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: npm run build
+
+      # _next 디렉터리가 Jekyll 처리로 누락되지 않게 (브랜치 배포로 바꿔도 안전)
+      - run: touch out/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
