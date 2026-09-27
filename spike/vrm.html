@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>스파이크: VRM 3D 아바타 + MediaPipe 성능</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #0f1115; color: #e6e8ee; font-family: -apple-system, sans-serif; overflow: hidden; }
+  #stage { position: relative; width: 100%; height: 100dvh; }
+  #gl { display: block; width: 100%; height: 100%; }
+  #video { position: absolute; left: 8px; bottom: 128px; width: 96px; border-radius: 8px; opacity: 0; pointer-events: none; z-index: 5; }
+  #video.show { opacity: 1; }
+  #banner { position: absolute; top: env(safe-area-inset-top, 0); left: 0; right: 0; padding: 10px 14px; text-align: center; font-size: 15px; font-weight: 600; background: rgba(30,160,90,.85); z-index: 10; }
+  #banner.warn { background: rgba(220,120,30,.9); }
+  #banner.alert { background: rgba(210,50,50,.9); }
+  #stats { position: absolute; right: 8px; top: 52px; z-index: 10; background: rgba(15,17,21,.8); border: 1px solid #2a2f3a; border-radius: 10px; padding: 10px 12px; font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1.7; min-width: 156px; }
+  #stats b { font-size: 20px; color: #7fd4a0; }
+  #stats .dim { color: #8b93a5; }
+  #fpsLog { position: absolute; left: 8px; top: 52px; z-index: 10; background: rgba(15,17,21,.8); border: 1px solid #2a2f3a; border-radius: 10px; padding: 8px 10px; font-size: 11px; line-height: 1.6; color: #8b93a5; max-height: 40dvh; overflow-y: auto; font-variant-numeric: tabular-nums; }
+  #controls { position: absolute; bottom: 0; left: 0; right: 0; padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0)); display: flex; flex-wrap: wrap; gap: 8px; z-index: 10; background: linear-gradient(transparent, rgba(15,17,21,.9)); }
+  button { flex: 1 1 30%; padding: 13px 6px; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; background: #2a3142; color: #e6e8ee; }
+  button.primary { background: #3b6ef5; }
+  button.on { background: #1f6b46; }
+  #overlay { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #0f1115; padding: 24px; text-align: center; }
+  #overlay p { color: #8b93a5; font-size: 14px; line-height: 1.6; }
+  #overlay button { flex: none; padding: 16px 48px; font-size: 17px; }
+  #loadmsg { color: #7fd4a0; font-size: 13px; min-height: 20px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <video id="video" playsinline muted autoplay></video>
+  <div id="banner">대기 중</div>
+
+  <div id="stats">
+    <b id="fps">–</b> <span class="dim">FPS</span><br>
+    추론 <span id="infer">–</span> ms · 렌더 <span id="render">–</span> ms<br>
+    <span class="dim">draw</span> <span id="calls">–</span> · <span class="dim">tri</span> <span id="tris">–</span>k<br>
+    <span class="dim">pitch</span> <span id="pitch">–</span>° <span class="dim">yaw</span> <span id="yaw">–</span>°<br>
+    <span class="dim">경과</span> <span id="elapsed">0:00</span>
+  </div>
+  <div id="fpsLog"><div class="dim">30초마다 기록</div></div>
+
+  <div id="controls">
+    <button id="mirrorBtn" class="on">거울 반전</button>
+    <button id="springBtn" class="on">머리카락 물리</button>
+    <button id="capBtn">30fps 제한</button>
+    <button id="toggleRaw">원본 보기</button>
+    <button id="stopBtn">종료</button>
+  </div>
+
+  <div id="overlay">
+    <h2>VRM 3D 아바타 스파이크</h2>
+    <p>검증: 3D 아바타(VRM 1.0, 삼각형 3.9만, 텍스처 24장)를 MediaPipe 추론과 <b>같은 GPU</b>에서 돌려도 실사용 FPS·발열이 나오는가.<br><br>
+    폰을 거치대에 두고 <b>10~15분</b> 방치하며 FPS 변화를 보세요. 2D 스파이크(index.html)와 같은 조건입니다.<br>
+    하단 버튼으로 물리 끄기·30fps 제한의 효과도 비교할 수 있습니다.</p>
+    <button class="primary" id="startBtn">카메라 시작</button>
+    <div id="loadmsg">로딩 준비…</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const video = $("video");
+const loadMsg = m => $("loadmsg").textContent = m;
+
+// ── 감지/추론 파라미터 (2D 스파이크와 동일 — 비교 조건 고정) ──
+const ABSENCE_DELAY_MS = 3000, HEADDOWN_PITCH_DEG = 22, HEADDOWN_DELAY_MS = 4000;
+const INFER_INTERVAL_MS = 100;   // 추론 10Hz
+const SMOOTH = 0.35;             // 추론값 → 렌더 프레임 보간
+const MAX_DPR = 1.5;             // 렌더 픽셀 수 제한 (발열)
+
+// ── Three.js ──
+const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), antialias: false, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DPR));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x171a21);
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+const light = new THREE.DirectionalLight(0xffffff, Math.PI);
+light.position.set(0.5, 1, 1.5).normalize();
+scene.add(light, new THREE.AmbientLight(0xffffff, 0.6));
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+// ── VRM 로딩 ──
+let vrm = null, headBone = null, neckBone = null;
+const loader = new GLTFLoader();
+loader.register(parser => new VRMLoaderPlugin(parser));
+
+async function loadVrm() {
+  const t0 = performance.now();
+  const gltf = await loader.loadAsync("./avatar.vrm", ev => {
+    if (ev.total) loadMsg(`VRM 다운로드 ${(ev.loaded / 1048576).toFixed(1)} / ${(ev.total / 1048576).toFixed(1)} MB`);
+  });
+  vrm = gltf.userData.vrm;
+  // 공식 예제와 같은 최적화 — 정점/스켈레톤/모프 병합으로 draw call 절감
+  VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  VRMUtils.combineSkeletons(gltf.scene);
+  VRMUtils.combineMorphs(vrm);
+  vrm.scene.traverse(o => { o.frustumCulled = false; });  // 스킨드 메시 바운딩 오판 방지
+  scene.add(vrm.scene);
+
+  headBone = vrm.humanoid.getNormalizedBoneNode("head");
+  neckBone = vrm.humanoid.getNormalizedBoneNode("neck");
+
+  // 카메라: 머리 뼈를 정면 근접 촬영 (얼굴 마스킹 화면 구도)
+  vrm.scene.updateMatrixWorld(true);
+  const headPos = new THREE.Vector3();
+  headBone.getWorldPosition(headPos);
+  // 머리 전체 + 어깨가 들어오는 거리. VRM 1.0은 +Z가 정면
+  camera.position.set(headPos.x, headPos.y + 0.06, headPos.z + 0.95);
+  camera.lookAt(headPos.x, headPos.y + 0.06, headPos.z);
+
+  const ms = (performance.now() - t0) / 1000;
+  const expr = vrm.expressionManager?.presetExpressionMap ? Object.keys(vrm.expressionManager.presetExpressionMap).length : "?";
+  loadMsg(`VRM 준비 (${ms.toFixed(1)}s, 표정 프리셋 ${expr}개) — MediaPipe 로딩 중…`);
+}
+
+// ── MediaPipe ──
+let landmarker = null;
+async function loadMediaPipe() {
+  const fileset = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate: "GPU" },
+    runningMode: "VIDEO", numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true,
+  });
+}
+(async () => {
+  try {
+    await loadVrm();
+    await loadMediaPipe();
+    loadMsg("준비 완료 — 카메라를 시작하세요");
+  } catch (e) { loadMsg("로딩 실패: " + e.message); console.error(e); }
+})();
+
+// ── 상태 ──
+let running = false, startTime = 0, lastVideoTime = -1, lastResult = null;
+let inferTimes = [], renderTimes = [], frameTimes = [], lastFrameTs = 0, lastInferTs = 0, lastRenderTs = 0;
+let noFaceSince = null, headDownSince = null, logTimer = null, wakeLock = null;
+let mirror = true, spring = true, cap30 = false;
+const sm = { pitch: 0, yaw: 0, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+const clock = new THREE.Clock();
+
+$("mirrorBtn").onclick = e => { mirror = !mirror; e.target.classList.toggle("on", mirror); };
+$("springBtn").onclick = e => { spring = !spring; e.target.classList.toggle("on", spring); };
+$("capBtn").onclick = e => { cap30 = !cap30; e.target.classList.toggle("on", cap30); };
+$("toggleRaw").onclick = () => video.classList.toggle("show");
+
+$("startBtn").onclick = async () => {
+  if (!landmarker || !vrm) { loadMsg("아직 로딩 중입니다…"); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 24 } }, audio: false });
+    video.srcObject = stream; await video.play();
+    $("overlay").style.display = "none";
+    running = true; startTime = performance.now();
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+    logTimer = setInterval(logFps, 30000);
+    clock.start();
+    requestAnimationFrame(loop);
+  } catch (e) { loadMsg("카메라 실패: " + e.message); }
+};
+$("stopBtn").onclick = () => {
+  running = false; clearInterval(logTimer); wakeLock?.release();
+  video.srcObject?.getTracks().forEach(t => t.stop());
+  $("overlay").style.display = "flex";
+  loadMsg("종료됨 — 좌측 기록을 확인하세요");
+};
+
+// ── 메인 루프 ──
+function loop(ts) {
+  if (!running) return;
+  requestAnimationFrame(loop);
+  if (cap30 && ts - lastRenderTs < 33) return;   // 30fps 제한 실험
+  if (lastFrameTs) { frameTimes.push(ts - lastFrameTs); if (frameTimes.length > 60) frameTimes.shift(); }
+  lastFrameTs = ts;
+
+  if (video.currentTime !== lastVideoTime && video.readyState >= 2 && ts - lastInferTs >= INFER_INTERVAL_MS) {
+    lastVideoTime = video.currentTime; lastInferTs = ts;
+    const t0 = performance.now();
+    lastResult = landmarker.detectForVideo(video, t0);
+    inferTimes.push(performance.now() - t0); if (inferTimes.length > 60) inferTimes.shift();
+  }
+
+  const now = performance.now();
+  const face = lastResult?.faceLandmarks?.[0] ?? null;
+  let pitch = 0, yaw = 0, roll = 0;
+  if (face && lastResult.facialTransformationMatrixes?.[0]) {
+    const m = lastResult.facialTransformationMatrixes[0].data, R = (r, c) => m[c * 4 + r];
+    pitch = Math.atan2(R(2,1), R(2,2)) * 180 / Math.PI;
+    yaw   = Math.atan2(-R(2,0), Math.hypot(R(2,1), R(2,2))) * 180 / Math.PI;
+    roll  = Math.atan2(R(1,0), R(0,0)) * 180 / Math.PI;
+  }
+
+  // 감지 (2D 스파이크와 동일)
+  let state = "", msg = "🟢 집중 감지 중";
+  if (!face) {
+    noFaceSince ??= now; headDownSince = null;
+    if (now - noFaceSince > ABSENCE_DELAY_MS) { state = "alert"; msg = "🔴 부재 감지"; } else msg = "⚪ 얼굴 찾는 중…";
+  } else {
+    noFaceSince = null;
+    if (Math.abs(pitch) > HEADDOWN_PITCH_DEG) { headDownSince ??= now; if (now - headDownSince > HEADDOWN_DELAY_MS) { state = "warn"; msg = "🟠 고개 숙임 지속"; } }
+    else headDownSince = null;
+  }
+  $("banner").textContent = msg; $("banner").className = state;
+
+  // 보간 (부재 시 중립 자세로 서서히 복귀)
+  const bs = n => lastResult?.faceBlendshapes?.[0]?.categories?.find(c => c.categoryName === n)?.score ?? 0;
+  const target = face
+    ? { pitch, yaw, roll, blinkL: bs("eyeBlinkLeft"), blinkR: bs("eyeBlinkRight"), jaw: bs("jawOpen"), smile: (bs("mouthSmileLeft") + bs("mouthSmileRight")) / 2 }
+    : { pitch: 0, yaw: 0, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+  for (const k in target) sm[k] += (target[k] - sm[k]) * SMOOTH;
+
+  driveAvatar(sm);
+
+  const r0 = performance.now();
+  renderer.render(scene, camera);
+  renderTimes.push(performance.now() - r0); if (renderTimes.length > 60) renderTimes.shift();
+  lastRenderTs = ts;
+  updateStats(pitch, yaw, now);
+}
+
+// ── 신호 → VRM ──
+const D2R = Math.PI / 180;
+function driveAvatar(s) {
+  const sign = mirror ? -1 : 1;
+  // 머리 70% + 목 30%로 나눠 자연스럽게. pitch +는 아래(three에서 +X 회전 = 얼굴 아래로)
+  const rx = s.pitch * D2R, ry = sign * s.yaw * D2R, rz = sign * s.roll * D2R;
+  headBone.rotation.set(rx * 0.7, ry * 0.7, rz * 0.7);
+  if (neckBone) neckBone.rotation.set(rx * 0.3, ry * 0.3, rz * 0.3);
+
+  const em = vrm.expressionManager;
+  if (em) {
+    // 거울 반전이면 좌우 눈도 바꿔야 내 왼눈 감을 때 화면 왼쪽 눈이 감긴다
+    em.setValue("blinkLeft", mirror ? s.blinkR : s.blinkL);
+    em.setValue("blinkRight", mirror ? s.blinkL : s.blinkR);
+    em.setValue("aa", s.jaw);
+    em.setValue("happy", s.smile * 0.8);
+  }
+  if (spring) vrm.update(clock.getDelta());
+  else { clock.getDelta(); vrm.humanoid.update(); em?.update(); }  // 물리 생략, 뼈·표정만 반영
+}
+
+// ── 통계 ──
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+function updateStats(pitch, yaw, now) {
+  const fps = frameTimes.length ? 1000 / avg(frameTimes) : 0;
+  $("fps").textContent = fps.toFixed(0);
+  $("fps").style.color = fps >= 25 ? "#7fd4a0" : fps >= 15 ? "#e8b84c" : "#e86a5a";
+  $("infer").textContent = avg(inferTimes).toFixed(1);
+  $("render").textContent = avg(renderTimes).toFixed(1);
+  $("calls").textContent = renderer.info.render.calls;
+  $("tris").textContent = (renderer.info.render.triangles / 1000).toFixed(0);
+  $("pitch").textContent = pitch.toFixed(0); $("yaw").textContent = yaw.toFixed(0);
+  const s = Math.floor((now - startTime) / 1000);
+  $("elapsed").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function logFps() {
+  const fps = frameTimes.length ? 1000 / avg(frameTimes) : 0;
+  const s = Math.floor((performance.now() - startTime) / 1000);
+  const row = document.createElement("div");
+  row.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} → ${fps.toFixed(0)}fps · 추론 ${avg(inferTimes).toFixed(0)}ms · 렌더 ${avg(renderTimes).toFixed(1)}ms${spring ? "" : " · 물리off"}${cap30 ? " · 30cap" : ""}`;
+  $("fpsLog").appendChild(row);
+}
+</script>
+</body>
+</html>
