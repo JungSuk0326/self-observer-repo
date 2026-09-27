@@ -16,9 +16,9 @@ import type {
  * 집계 규칙:
  * - focused/initializing → focusedMs (세션 초반 얼굴 인식 전 워밍업은
  *   사용자 잘못이 아니므로 집중으로 인정)
- * - away/head_down → distractedMs
+ * - away/head_down/looking_away → distractedMs
  * - 일시정지 중 → pausedMs (elapsed에서 제외)
- * - away/head_down 진입 횟수를 각각 카운트 (리포트용)
+ * - away/head_down/looking_away 진입 횟수를 각각 카운트 (리포트용)
  */
 export class SessionEngine {
   private readonly config: SessionConfig;
@@ -31,6 +31,7 @@ export class SessionEngine {
   private pausedMs = 0;
   private awayCount = 0;
   private headDownCount = 0;
+  private lookAwayCount = 0;
 
   constructor(config: Partial<SessionConfig> = {}) {
     this.config = { goalDurationMs: null, ...config };
@@ -71,6 +72,7 @@ export class SessionEngine {
     if (this.phase === "running" && focusState !== this.lastFocusState) {
       if (focusState === "away") this.awayCount += 1;
       if (focusState === "head_down") this.headDownCount += 1;
+      if (focusState === "looking_away") this.lookAwayCount += 1;
     }
     this.lastFocusState = focusState;
   }
@@ -92,6 +94,7 @@ export class SessionEngine {
       pausedMs: this.pausedMs,
       awayCount: this.awayCount,
       headDownCount: this.headDownCount,
+      lookAwayCount: this.lookAwayCount,
       focusRatio: elapsedMs > 0 ? this.focusedMs / elapsedMs : 0,
     };
   }
@@ -109,6 +112,7 @@ export class SessionEngine {
       pausedMs: this.pausedMs,
       awayCount: this.awayCount,
       headDownCount: this.headDownCount,
+      lookAwayCount: this.lookAwayCount,
       lastFocusState: this.lastFocusState,
     };
   }
@@ -124,7 +128,11 @@ export class SessionEngine {
       return;
     }
     // running: 직전 구간의 상태(lastFocusState) 기준으로 귀속
-    if (this.lastFocusState === "away" || this.lastFocusState === "head_down") {
+    if (
+      this.lastFocusState === "away" ||
+      this.lastFocusState === "head_down" ||
+      this.lastFocusState === "looking_away"
+    ) {
       this.distractedMs += delta;
     } else {
       this.focusedMs += delta;

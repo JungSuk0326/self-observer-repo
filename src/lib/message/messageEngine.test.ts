@@ -15,6 +15,7 @@ function snap(over: Partial<SessionSnapshot> = {}): SessionSnapshot {
     pausedMs: 0,
     awayCount: 0,
     headDownCount: 0,
+    lookAwayCount: 0,
     lastFocusState: "focused",
     ...over,
   };
@@ -180,5 +181,32 @@ describe("MessageEngine — 격려", () => {
     const again = e.update(tick(11_000, [ev("absence_start", 11_000)]));
     expect(again).toHaveLength(1); // 쿨다운이 이어지지 않음
     expect(again[0].text).toBe(first.text); // 1단계 문구로 돌아감
+  });
+});
+
+describe("MessageEngine — 시선 이탈", () => {
+  it("시선 이탈 시작에 경고, 복귀에 격려를 낸다", () => {
+    const e = startedEngine();
+    expect(e.update(tick(5000, [ev("look_away_start", 5000)])).map((m) => m.kind)).toEqual([
+      "look_away",
+    ]);
+    expect(e.update(tick(9000, [ev("look_away_end", 9000)])).map((m) => m.kind)).toEqual([
+      "look_back",
+    ]);
+  });
+
+  it("쿨다운 안의 재발은 경고도 복귀 격려도 내지 않는다", () => {
+    const e = startedEngine({ warnCooldownMs: 45_000 });
+    e.update(tick(5000, [ev("look_away_start", 5000)]));
+    e.update(tick(8000, [ev("look_away_end", 8000)]));
+    expect(e.update(tick(20_000, [ev("look_away_start", 20_000)]))).toEqual([]);
+    expect(e.update(tick(25_000, [ev("look_away_end", 25_000)]))).toEqual([]);
+  });
+
+  it("시선 이탈 중에는 집중 이정표를 내지 않는다", () => {
+    const e = startedEngine({ milestoneIntervalMs: 60_000 });
+    expect(
+      e.update(tick(60_000, [], snap({ focusedMs: 60_000, lastFocusState: "looking_away" }))),
+    ).toEqual([]);
   });
 });

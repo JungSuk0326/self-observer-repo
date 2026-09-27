@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { DetectionEngine } from "./detectionEngine";
 
 /** 테스트 헬퍼: t(ms) 시점의 입력 */
-const present = (t: number, pitch = 0) => ({ present: true, pitch, timestamp: t });
-const absent = (t: number) => ({ present: false, pitch: 0, timestamp: t });
+const present = (t: number, pitch = 0, yaw = 0) => ({ present: true, pitch, yaw, timestamp: t });
+const absent = (t: number) => ({ present: false, pitch: 0, yaw: 0, timestamp: t });
 
 describe("DetectionEngine — 초기화", () => {
   it("첫 얼굴 검출 전에는 부재를 판정하지 않는다 (카메라 준비 중 오탐 방지)", () => {
@@ -135,5 +135,90 @@ describe("DetectionEngine — 상태 간 상호작용", () => {
     engine.reset();
     expect(engine.currentState).toBe("initializing");
     expect(engine.update(absent(100)).state).toBe("initializing");
+  });
+});
+
+describe("DetectionEngine — 시선 이탈 (D-3)", () => {
+  const cfg = { lookAwayYawDeg: 35, lookAwayDelayMs: 3000, absenceDelayMs: 3000, turnedAbsenceDelayMs: 15_000 };
+
+  it("옆을 본 채 지연 시간이 지나면 looking_away + look_away_start", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0));
+    e.update(present(1000, 0, 50));
+    expect(e.update(present(3500, 0, 50)).state).toBe("focused"); // 2.5초 — 아직
+    const r = e.update(present(4000, 0, 50));
+    expect(r.state).toBe("looking_away");
+    expect(r.events).toEqual([{ type: "look_away_start", at: 4000 }]);
+  });
+
+  it("잠깐 옆을 보는 건(지연 미만) 판정하지 않는다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0));
+    e.update(present(1000, 0, 60));
+    const r = e.update(present(2500, 0, 0));
+    expect(r.state).toBe("focused");
+    expect(r.events).toEqual([]);
+  });
+
+  it("정면으로 돌아오면 즉시 focused + look_away_end", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0));
+    e.update(present(1000, 0, 50));
+    e.update(present(5000, 0, 50)); // looking_away 확정
+    const r = e.update(present(5100, 0, 5));
+    expect(r.state).toBe("focused");
+    expect(r.events).toEqual([{ type: "look_away_end", at: 5100 }]);
+  });
+
+  it("옆을 보던 중 얼굴을 놓치면 부재가 아니라 시선 이탈로 이어진다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0));
+    e.update(present(1000, 0, 45)); // 옆으로 돌리기 시작
+    e.update(absent(1500)); // 45° 넘기며 추적 끊김
+    // 정면 부재 기준(3s)이 지나도 away가 아니다
+    expect(e.update(absent(5000)).state).toBe("looking_away");
+    // 옆을 본 채 놓친 경우의 긴 지연(15s)이 지나야 부재
+    expect(e.update(absent(16_000)).state).toBe("looking_away");
+    const r = e.update(absent(16_600));
+    expect(r.state).toBe("away");
+    expect(r.events).toEqual([{ type: "absence_start", at: 16_600 }]);
+  });
+
+  it("정면에서 얼굴을 놓치면 기존대로 짧은 지연 뒤 부재", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0, 0, 5));
+    e.update(absent(1000));
+    expect(e.update(absent(4000)).state).toBe("away");
+  });
+
+  it("옆을 보다 놓친 뒤 돌아오면 이벤트로 복귀를 알린다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0));
+    e.update(present(1000, 0, 50));
+    e.update(absent(1200));
+    e.update(absent(5000)); // looking_away
+    const r = e.update(present(5500, 0, 0));
+    expect(r.state).toBe("focused");
+    expect(r.events).toEqual([{ type: "look_away_end", at: 5500 }]);
+  });
+
+  it("옆을 보는 동안은 고개 숙임을 판정하지 않는다 (큰 yaw에서 pitch 불신)", () => {
+    const e = new DetectionEngine({ ...cfg, headDownPitchDeg: 22, headDownDelayMs: 4000 });
+    e.update(present(0));
+    e.update(present(1000, 30, 50)); // pitch도 크고 yaw도 큼
+    const r = e.update(present(6000, 30, 50));
+    expect(r.state).toBe("looking_away");
+    expect(r.events.map((x) => x.type)).not.toContain("head_down_start");
+  });
+
+  it("부재에서 돌아왔는데 여전히 옆을 보면 곧바로 시선 이탈", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(present(0));
+    e.update(present(1000, 0, 50));
+    e.update(absent(1200));
+    e.update(absent(20_000)); // away
+    const r = e.update(present(20_500, 0, 50));
+    expect(r.state).toBe("looking_away");
+    expect(r.events.map((x) => x.type)).toEqual(["absence_end", "look_away_start"]);
   });
 });

@@ -180,6 +180,7 @@ export default function SessionPage() {
       const { state, events } = detection.update({
         present: signal.present,
         pitch: corrected.pitch,
+        yaw: corrected.yaw,
         timestamp: signal.timestamp,
       });
       setFocusState(state);
@@ -322,6 +323,7 @@ export default function SessionPage() {
           <AvatarCanvas
             signalRef={signalRef}
             preset={getPresetById(presetId)}
+            focusState={focusState}
             className="min-h-0 w-full flex-1"
           />
           <StateBanner focusState={focusState} paused={Boolean(paused)} />

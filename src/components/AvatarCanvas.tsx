@@ -2,7 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import type { FaceSignal } from "@/lib/vision/types";
+import type { FocusState } from "@/lib/detection/types";
 import { DEFAULT_PRESET, type AvatarPreset } from "@/lib/avatar/presets";
+
+/** 시선 이탈로 판정됐을 때 보여줄 측면 각도 — 추적 한계(±45°) 너머는 추정이다 */
+const TURNED_YAW_DEG = 80;
+/** 추정 자세로 넘어가는 보간 계수 */
+const EASE = 0.12;
+type Pose = FaceSignal["smoothed"];
 
 /** 렌더 픽셀 수 제한 — GPU/발열 절감 (스파이크 검증값) */
 const MAX_DPR = 1.5;
@@ -11,6 +18,12 @@ interface AvatarCanvasProps {
   /** useFaceTracking의 signalRef — rAF로 직접 읽어 리렌더 없이 그린다 */
   signalRef: React.RefObject<FaceSignal | null>;
   preset?: AvatarPreset;
+  /**
+   * 감지 엔진 상태. 얼굴을 놓쳤을 때 무엇을 그릴지 결정한다:
+   * looking_away → 마지막 방향으로 돌린 옆모습(추정), away → 빈 자리,
+   * 그 외(잠깐 놓침) → 마지막 자세 유지. 없으면 놓치자마자 빈 자리로 그린다.
+   */
+  focusState?: FocusState;
   className?: string;
 }
 
@@ -22,13 +35,20 @@ interface AvatarCanvasProps {
 export default function AvatarCanvas({
   signalRef,
   preset = DEFAULT_PRESET,
+  focusState,
   className,
 }: AvatarCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const presetRef = useRef(preset);
+  const focusRef = useRef<FocusState | undefined>(focusState);
+  /** 얼굴을 놓친 동안 그릴 자세 — 마지막으로 본 자세에서 출발해 목표로 보간 */
+  const heldRef = useRef<Pose | null>(null);
   useEffect(() => {
     presetRef.current = preset;
   }, [preset]);
+  useEffect(() => {
+    focusRef.current = focusState;
+  }, [focusState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -48,18 +68,42 @@ export default function AvatarCanvas({
       ctx.fillRect(0, 0, w, h);
 
       const signal = signalRef.current;
-      if (!signal?.present) {
-        ctx.fillStyle = "#3a4152";
-        ctx.font = `${w / 16}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.fillText("(자리 비움)", w / 2, h / 2);
-        return;
+      const state = focusRef.current;
+      let pose: Pose;
+      if (signal?.present) {
+        pose = signal.smoothed;
+        heldRef.current = { ...pose };
+      } else {
+        const held = heldRef.current;
+        const showEmpty = !held || state === "away" || state === undefined;
+        if (showEmpty) {
+          ctx.fillStyle = "#3a4152";
+          ctx.font = `${w / 16}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText("(자리 비움)", w / 2, h / 2);
+          return;
+        }
+        // 놓친 동안의 추정 자세: 시선 이탈이면 마지막 방향으로 더 돌리고, 표정은 푼다
+        const target: Pose = {
+          ...held,
+          yaw: state === "looking_away" ? Math.sign(held.yaw || 1) * TURNED_YAW_DEG : held.yaw,
+          roll: 0,
+          blinkL: 0, blinkR: 0, jaw: 0, brow: 0, smile: 0,
+        };
+        for (const k of Object.keys(held) as (keyof Pose)[]) {
+          held[k] += (target[k] - held[k]) * EASE;
+        }
+        pose = held;
       }
 
-      const { pitch, yaw, roll, blinkL, blinkR, jaw, brow, smile } = signal.smoothed;
+      const { pitch, yaw, roll, blinkL, blinkR, jaw, brow, smile } = pose;
       const cx = w / 2 + (-yaw / 45) * w * 0.12;
       const cy = h / 2 + (pitch / 45) * h * 0.1;
       const R = Math.min(w, h) * 0.27;
+      // 옆모습 표현: 머리 폭은 cos(yaw)만큼 좁아지고, 이목구비는 돌린 쪽으로 쏠린다
+      const yawRad = (yaw * Math.PI) / 180;
+      const faceShift = -Math.sin(yawRad) * R * 0.45;
+      const headW = R * Math.max(0.55, Math.abs(Math.cos(yawRad)) * 0.6 + 0.4);
 
       ctx.save();
       ctx.translate(cx, cy);
@@ -70,8 +114,10 @@ export default function AvatarCanvas({
       // 머리
       ctx.fillStyle = p.skin;
       ctx.beginPath();
-      ctx.ellipse(0, 0, R, R * 1.12, 0, 0, 7);
+      ctx.ellipse(0, 0, headW, R * 1.12, 0, 0, 7);
       ctx.fill();
+      // 이목구비는 돌린 방향으로 이동
+      ctx.translate(faceShift, 0);
 
       // 볼터치
       if (p.blush) {

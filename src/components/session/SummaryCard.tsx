@@ -18,8 +18,8 @@ export default function SummaryCard({ summary, onClose }: SummaryCardProps) {
     { label: "이탈", value: formatClock(summary.distractedMs), className: "text-red-400" },
     { label: "휴식", value: formatClock(summary.pausedMs) },
     {
-      label: "자리비움 / 고개숙임",
-      value: `${summary.awayCount}회 / ${summary.headDownCount}회`,
+      label: "자리비움 / 고개숙임 / 시선이탈",
+      value: `${summary.awayCount} / ${summary.headDownCount} / ${summary.lookAwayCount}회`,
     },
   ];
 

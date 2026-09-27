@@ -21,6 +21,7 @@ export interface SessionSnapshot {
   pausedMs: number;
   awayCount: number;
   headDownCount: number;
+  lookAwayCount: number;
   /** 마지막으로 반영된 집중 상태 */
   lastFocusState: FocusState;
 }
@@ -37,6 +38,7 @@ export interface SessionSummary {
   pausedMs: number;
   awayCount: number;
   headDownCount: number;
+  lookAwayCount: number;
   /** 집중률(0~1). elapsed 0이면 0 */
   focusRatio: number;
 }

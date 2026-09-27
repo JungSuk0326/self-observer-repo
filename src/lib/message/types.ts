@@ -10,6 +10,8 @@ export type MessageKind =
   | "welcome_back" // 부재 후 복귀 격려
   | "head_down" // 고개 숙임 경고 (D-2)
   | "head_up" // 고개 숙임 해소 격려
+  | "look_away" // 시선 이탈 경고 (D-3)
+  | "look_back" // 시선 복귀 격려
   | "focus_milestone" // 누적 집중 시간 이정표 격려
   | "goal_reached"; // 목표 시간 달성
 

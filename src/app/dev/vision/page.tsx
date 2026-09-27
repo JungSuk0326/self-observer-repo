@@ -35,6 +35,7 @@ const STATE_BANNER: Record<FocusState, { label: string; className: string }> = {
   focused: { label: "🟢 집중 감지 중", className: "bg-emerald-700/90" },
   away: { label: "🔴 부재 감지 — 자리를 비웠어요", className: "bg-red-700/90" },
   head_down: { label: "🟠 고개 숙임 지속 — 졸리신가요?", className: "bg-amber-600/90" },
+  looking_away: { label: "🟡 시선 이탈 — 화면 밖을 보고 있어요", className: "bg-yellow-600/90" },
 };
 
 function formatMs(ms: number): string {
@@ -158,6 +159,7 @@ export default function VisionDevPage() {
       const { state, events } = engine.update({
         present: s.present,
         pitch: corrected.pitch,
+        yaw: corrected.yaw,
         timestamp: s.timestamp,
       });
       setFocusState(state);
@@ -217,6 +219,7 @@ export default function VisionDevPage() {
       <AvatarCanvas
         signalRef={signalRef}
         preset={getPresetById(presetId)}
+        focusState={focusState}
         className="min-h-0 w-full flex-1"
       />
 
@@ -239,7 +242,8 @@ export default function VisionDevPage() {
             집중 {formatMs(sessionSnap.focusedMs)} · 이탈{" "}
             {formatMs(sessionSnap.distractedMs)}
             <br />
-            자리비움 {sessionSnap.awayCount}회 · 고개숙임 {sessionSnap.headDownCount}회
+            자리비움 {sessionSnap.awayCount} · 고개숙임 {sessionSnap.headDownCount} · 시선이탈{" "}
+            {sessionSnap.lookAwayCount}
           </div>
         </div>
       )}
@@ -365,9 +369,9 @@ export default function VisionDevPage() {
                 <dd>{formatMs(summary.pausedMs)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-gray-400">자리비움 / 고개숙임</dt>
+                <dt className="text-gray-400">자리비움 / 고개숙임 / 시선이탈</dt>
                 <dd>
-                  {summary.awayCount}회 / {summary.headDownCount}회
+                  {summary.awayCount} / {summary.headDownCount} / {summary.lookAwayCount}회
                 </dd>
               </div>
               <div className="flex justify-between border-t border-gray-700 pt-2 font-bold">

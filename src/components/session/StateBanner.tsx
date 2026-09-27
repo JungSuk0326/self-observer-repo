@@ -7,6 +7,7 @@ const BANNER: Record<FocusState, { label: string; className: string }> = {
   focused: { label: "🟢 감독관이 지켜보고 있어요", className: "bg-emerald-700/90" },
   away: { label: "🔴 자리를 비우셨어요", className: "bg-red-700/90" },
   head_down: { label: "🟠 고개가 오래 숙여져 있어요", className: "bg-amber-600/90" },
+  looking_away: { label: "🟡 시선이 화면 밖에 있어요", className: "bg-yellow-600/90" },
 };
 
 interface StateBannerProps {

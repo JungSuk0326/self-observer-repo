@@ -11,6 +11,8 @@ const TONE: Record<MessageKind, MessageTone> = {
   welcome_back: "encourage",
   head_down: "warn",
   head_up: "encourage",
+  look_away: "warn",
+  look_back: "encourage",
   focus_milestone: "encourage",
   goal_reached: "encourage",
 };
@@ -22,9 +24,9 @@ const TONE: Record<MessageKind, MessageTone> = {
  * 흐르고, 문구 선택은 결정적(랜덤 없음)이라 테스트 가능하다.
  *
  * 억제 규칙(잦은 알림은 오탐과 같은 이탈 요인):
- * - 경고(away/head_down)는 종류별 쿨다운 안에서는 재발해도 말하지 않는다.
+ * - 경고(away/head_down/look_away)는 종류별 쿨다운 안에서는 재발해도 말하지 않는다.
  *   단 발생 횟수는 세어 다음 문구 단계(escalation)에 반영한다.
- * - 복귀 격려(welcome_back/head_up)는 실제로 경고가 나갔던 이탈에만 낸다.
+ * - 복귀 격려(welcome_back/head_up/look_back)는 실제로 경고가 나갔던 이탈에만 낸다.
  *   짧게 들락날락한 경우엔 조용히 넘어간다.
  * - 장시간 부재 제안은 부재 1회당 최대 1번.
  * - 집중 이정표는 누적 집중 시간이 간격을 넘을 때마다 1번, 목표 달성은 세션당 1번.
@@ -42,6 +44,7 @@ export class MessageEngine {
   private awayWarned = false;
   private longAbsenceSaid = false;
   private headDownWarned = false;
+  private lookAwayWarned = false;
 
   private lastMilestone = 0;
   private goalSaid = false;
@@ -101,6 +104,17 @@ export class MessageEngine {
           this.headDownWarned = false;
           break;
         }
+        case "look_away_start": {
+          const msg = this.warn("look_away", ev.at);
+          this.lookAwayWarned = msg !== null;
+          if (msg) out.push(msg);
+          break;
+        }
+        case "look_away_end": {
+          if (this.lookAwayWarned) out.push(this.encourage("look_back", ev.at));
+          this.lookAwayWarned = false;
+          break;
+        }
       }
     }
 
@@ -128,7 +142,8 @@ export class MessageEngine {
     if (
       milestone > this.lastMilestone &&
       session.lastFocusState !== "away" &&
-      session.lastFocusState !== "head_down"
+      session.lastFocusState !== "head_down" &&
+      session.lastFocusState !== "looking_away"
     ) {
       this.lastMilestone = milestone;
       if (!goalJustSaid) {
@@ -156,12 +171,16 @@ export class MessageEngine {
     this.awayWarned = false;
     this.longAbsenceSaid = false;
     this.headDownWarned = false;
+    this.lookAwayWarned = false;
     this.lastMilestone = 0;
     this.goalSaid = false;
   }
 
   /** 경고: 횟수는 항상 세고, 쿨다운 안이면 null */
-  private warn(kind: "away" | "head_down", at: number): SupervisorMessage | null {
+  private warn(
+    kind: "away" | "head_down" | "look_away",
+    at: number,
+  ): SupervisorMessage | null {
     const count = (this.warnCount[kind] ?? 0) + 1;
     this.warnCount[kind] = count;
 

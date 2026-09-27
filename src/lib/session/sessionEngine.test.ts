@@ -147,3 +147,20 @@ describe("SessionEngine — 목표 시간 (C-2)", () => {
     expect(s.getSnapshot().goalReached).toBe(false);
   });
 });
+
+describe("SessionEngine — 시선 이탈 집계", () => {
+  it("looking_away 구간은 이탈로 귀속되고 횟수를 센다", () => {
+    const s = new SessionEngine();
+    s.start(0);
+    s.update(10_000, "focused");
+    s.update(10_000, "looking_away");
+    s.update(14_000, "looking_away");
+    s.update(14_000, "focused");
+    s.update(20_000, "focused");
+    const snap = s.getSnapshot();
+    expect(snap.distractedMs).toBe(4_000);
+    expect(snap.focusedMs).toBe(16_000);
+    expect(snap.lookAwayCount).toBe(1);
+    expect(s.end(20_000).lookAwayCount).toBe(1);
+  });
+});
