@@ -124,6 +124,7 @@ async function loadVrm() {
 
   headBone = vrm.humanoid.getNormalizedBoneNode("head");
   neckBone = vrm.humanoid.getNormalizedBoneNode("neck");
+  spineBone = vrm.humanoid.getNormalizedBoneNode("upperChest") ?? vrm.humanoid.getNormalizedBoneNode("spine");
 
   // 카메라: 머리 뼈를 정면 근접 촬영 (얼굴 마스킹 화면 구도)
   vrm.scene.updateMatrixWorld(true);
@@ -145,6 +146,8 @@ async function loadMediaPipe() {
   landmarker = await FaceLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate: "GPU" },
     runningMode: "VIDEO", numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true,
+    // 기본값 0.5 → 0.3: 측면으로 돌린 얼굴을 놓치는 각도를 넓힌다 (오탐은 스파이크에서 관찰)
+    minFaceDetectionConfidence: 0.3, minFacePresenceConfidence: 0.3, minTrackingConfidence: 0.3,
   });
 }
 (async () => {
@@ -161,6 +164,12 @@ let inferTimes = [], renderTimes = [], frameTimes = [], lastFrameTs = 0, lastInf
 let noFaceSince = null, headDownSince = null, logTimer = null, wakeLock = null;
 let mirror = true, spring = true, cap30 = false;
 const sm = { pitch: 0, yaw: 0, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+// 얼굴을 놓치기 직전 자세 — "옆으로 돌렸다"를 추정하는 근거
+const lastSeen = { pitch: 0, yaw: 0, roll: 0 };
+const TURN_AWAY_DEG = 25;   // 이 각도 이상으로 돌린 채 놓치면 '고개 돌림'으로 본다
+const TURN_AWAY_POSE = 80;  // 그때 아바타가 보여줄 측면 각도
+const HOLD_MS = 1000;       // 정면에서 놓친 경우 자세를 유지하는 시간
+let spineBone = null;
 const clock = new THREE.Clock();
 
 $("mirrorBtn").onclick = e => { mirror = !mirror; e.target.classList.toggle("on", mirror); };
@@ -218,7 +227,8 @@ function loop(ts) {
   let state = "", msg = "🟢 집중 감지 중";
   if (!face) {
     noFaceSince ??= now; headDownSince = null;
-    if (now - noFaceSince > ABSENCE_DELAY_MS) { state = "alert"; msg = "🔴 부재 감지"; } else msg = "⚪ 얼굴 찾는 중…";
+    if (now - noFaceSince > ABSENCE_DELAY_MS) { state = "alert"; msg = "🔴 부재 감지"; }
+    else msg = Math.abs(lastSeen.yaw) > TURN_AWAY_DEG ? "↩️ 고개 돌림 (추정)" : "⚪ 얼굴 찾는 중…";
   } else {
     noFaceSince = null;
     if (Math.abs(pitch) > HEADDOWN_PITCH_DEG) { headDownSince ??= now; if (now - headDownSince > HEADDOWN_DELAY_MS) { state = "warn"; msg = "🟠 고개 숙임 지속"; } }
@@ -228,9 +238,24 @@ function loop(ts) {
 
   // 보간 (부재 시 중립 자세로 서서히 복귀)
   const bs = n => lastResult?.faceBlendshapes?.[0]?.categories?.find(c => c.categoryName === n)?.score ?? 0;
-  const target = face
-    ? { pitch, yaw, roll, blinkL: bs("eyeBlinkLeft"), blinkR: bs("eyeBlinkRight"), jaw: bs("jawOpen"), smile: (bs("mouthSmileLeft") + bs("mouthSmileRight")) / 2 }
-    : { pitch: 0, yaw: 0, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+  let target;
+  if (face) {
+    target = { pitch, yaw, roll, blinkL: bs("eyeBlinkLeft"), blinkR: bs("eyeBlinkRight"), jaw: bs("jawOpen"), smile: (bs("mouthSmileLeft") + bs("mouthSmileRight")) / 2 };
+    Object.assign(lastSeen, { pitch, yaw, roll });
+  } else {
+    // 추적은 정면 ±45° 근처에서 끊긴다. 끊기기 직전에 이미 옆을 보고 있었다면
+    // 정면으로 되돌리지 않고 같은 방향으로 더 돌아간 '측면 자세'를 보여준다 (추정).
+    // 부재가 확정되면(3s) 그때 중립으로 돌아간다.
+    const lost = now - noFaceSince;
+    const turned = Math.abs(lastSeen.yaw) > TURN_AWAY_DEG;
+    if (lost < ABSENCE_DELAY_MS && turned) {
+      target = { pitch: lastSeen.pitch * 0.5, yaw: Math.sign(lastSeen.yaw) * TURN_AWAY_POSE, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+    } else if (lost < HOLD_MS) {
+      target = { ...lastSeen, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+    } else {
+      target = { pitch: 0, yaw: 0, roll: 0, blinkL: 0, blinkR: 0, jaw: 0, smile: 0 };
+    }
+  }
   for (const k in target) sm[k] += (target[k] - sm[k]) * SMOOTH;
 
   driveAvatar(sm);
@@ -248,8 +273,9 @@ function driveAvatar(s) {
   const sign = mirror ? -1 : 1;
   // 머리 70% + 목 30%로 나눠 자연스럽게. pitch +는 아래(three에서 +X 회전 = 얼굴 아래로)
   const rx = s.pitch * D2R, ry = sign * s.yaw * D2R, rz = sign * s.roll * D2R;
-  headBone.rotation.set(rx * 0.7, ry * 0.7, rz * 0.7);
-  if (neckBone) neckBone.rotation.set(rx * 0.3, ry * 0.3, rz * 0.3);
+  headBone.rotation.set(rx * 0.6, ry * 0.6, rz * 0.7);
+  if (neckBone) neckBone.rotation.set(rx * 0.3, ry * 0.25, rz * 0.3);
+  if (spineBone) spineBone.rotation.set(rx * 0.1, ry * 0.15, 0);  // 어깨가 살짝 따라와야 옆모습이 된다
 
   const em = vrm.expressionManager;
   if (em) {
