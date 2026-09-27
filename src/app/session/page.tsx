@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import AvatarCanvas from "@/components/AvatarCanvas";
+import Avatar from "@/components/Avatar";
 import AvatarPicker from "@/components/onboarding/AvatarPicker";
 import BlockedGuide from "@/components/onboarding/BlockedGuide";
 import CalibrationOverlay from "@/components/onboarding/CalibrationOverlay";
@@ -320,7 +320,7 @@ export default function SessionPage() {
 
       {cameraLive && (
         <>
-          <AvatarCanvas
+          <Avatar
             signalRef={signalRef}
             preset={getPresetById(presetId)}
             focusState={focusState}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import AvatarCanvas from "@/components/AvatarCanvas";
+import Avatar from "@/components/Avatar";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { AVATAR_PRESETS, getPresetById } from "@/lib/avatar/presets";
 import { Calibrator, applyBaseline } from "@/lib/detection/calibration";
@@ -216,7 +216,7 @@ export default function VisionDevPage() {
 
   return (
     <main className="relative flex h-dvh flex-col bg-[#0f1115] text-gray-100">
-      <AvatarCanvas
+      <Avatar
         signalRef={signalRef}
         preset={getPresetById(presetId)}
         focusState={focusState}

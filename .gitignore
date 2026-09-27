@@ -44,5 +44,6 @@ next-env.d.ts
 .claude/
 .gstack/
 
-# VRM 아바타 원본 (14MB 바이너리, VRoid 라이선스 personalNonProfit) — 스파이크는 spike/avatar.vrm 로컬 복사본을 읽는다
+# VRM 아바타 원본(14MB)과 스파이크 복사본은 무시. 배포용은 scripts/slim-vrm.py로 경량화한 public/avatars/*.vrm만 추적
 *.vrm
+!public/avatars/*.vrm

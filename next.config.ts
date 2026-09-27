@@ -18,6 +18,8 @@ const isPagesBuild = process.env.PAGES_BASE_PATH !== undefined;
 const nextConfig: NextConfig = {
   // cloudflared 터널로 폰 테스트 시 dev 리소스 cross-origin 차단 해제
   allowedDevOrigins: ["*.trycloudflare.com"],
+  // public/ 자산을 코드에서 직접 fetch할 때(VRM 등) basePath는 자동으로 안 붙는다 — 클라이언트에 알려준다
+  env: { NEXT_PUBLIC_BASE_PATH: basePath },
   ...(isPagesBuild
     ? {
         output: "export" as const,
