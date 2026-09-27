@@ -5,6 +5,10 @@ import type { FaceSignal } from "@/lib/vision/types";
 import type { FocusState } from "@/lib/detection/types";
 import type { CanvasAvatarPreset } from "@/lib/avatar/presets";
 import { PoseHold, type Pose } from "@/lib/avatar/poseHold";
+import type { AvatarAnchor } from "@/components/Avatar";
+
+/** 얼굴 중심의 세로 위치(캔버스 높이 비율) */
+const ANCHOR_Y: Record<AvatarAnchor, number> = { center: 0.5, upper: 0.32 };
 
 /** 렌더 픽셀 수 제한 — GPU/발열 절감 (스파이크 검증값) */
 const MAX_DPR = 1.5;
@@ -15,6 +19,7 @@ interface AvatarCanvasProps {
   preset: CanvasAvatarPreset;
   /** 감지 엔진 상태 — 얼굴을 놓쳤을 때 무엇을 그릴지 (PoseHold 참고) */
   focusState?: FocusState;
+  anchor?: AvatarAnchor;
   className?: string;
 }
 
@@ -27,11 +32,16 @@ export default function AvatarCanvas({
   signalRef,
   preset,
   focusState,
+  anchor = "center",
   className,
 }: AvatarCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const presetRef = useRef(preset);
   const focusRef = useRef<FocusState | undefined>(focusState);
+  const anchorRef = useRef<AvatarAnchor>(anchor);
+  useEffect(() => {
+    anchorRef.current = anchor;
+  }, [anchor]);
   const holdRef = useRef(new PoseHold());
   useEffect(() => {
     presetRef.current = preset;
@@ -66,13 +76,13 @@ export default function AvatarCanvas({
         ctx.fillStyle = "#3a4152";
         ctx.font = `${w / 16}px sans-serif`;
         ctx.textAlign = "center";
-        ctx.fillText("(자리 비움)", w / 2, h / 2);
+        ctx.fillText("(자리 비움)", w / 2, h * ANCHOR_Y[anchorRef.current]);
         return;
       }
 
       const { pitch, yaw, roll, blinkL, blinkR, jaw, brow, smile } = pose;
       const cx = w / 2 + (-yaw / 45) * w * 0.12;
-      const cy = h / 2 + (pitch / 45) * h * 0.1;
+      const cy = h * ANCHOR_Y[anchorRef.current] + (pitch / 45) * h * 0.1;
       const R = Math.min(w, h) * 0.27;
       // 옆모습 표현: 머리 폭은 cos(yaw)만큼 좁아지고, 이목구비는 돌린 쪽으로 쏠린다
       const yawRad = (yaw * Math.PI) / 180;

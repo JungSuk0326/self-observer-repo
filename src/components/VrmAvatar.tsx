@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { assetUrl } from "@/lib/assetUrl";
+import type { AvatarAnchor } from "@/components/Avatar";
 import { PoseHold, type Pose } from "@/lib/avatar/poseHold";
 import type { FocusState } from "@/lib/detection/types";
 import type { FaceSignal } from "@/lib/vision/types";
@@ -18,6 +19,9 @@ const HEAD_SHARE = { x: 0.6, y: 0.6, z: 0.7 };
 const NECK_SHARE = { x: 0.3, y: 0.25, z: 0.3 };
 const CHEST_SHARE = { x: 0.1, y: 0.15, z: 0 };
 const D2R = Math.PI / 180;
+/** 카메라와 얼굴의 수직 오프셋(m). upper는 얼굴을 화면 위쪽 1/3에 둔다 */
+const ANCHOR_OFFSET_Y: Record<AvatarAnchor, number> = { center: 0.06, upper: -0.06 };
+const CAMERA_DISTANCE = 0.95;
 
 interface VrmAvatarProps {
   /** useFaceTracking의 signalRef — rAF로 직접 읽어 리렌더 없이 그린다 */
@@ -26,6 +30,7 @@ interface VrmAvatarProps {
   path: string;
   /** 감지 엔진 상태 — 얼굴을 놓쳤을 때 무엇을 그릴지 (PoseHold 참고) */
   focusState?: FocusState;
+  anchor?: AvatarAnchor;
   className?: string;
 }
 
@@ -41,15 +46,28 @@ type LoadStatus = "loading" | "ready" | "error";
  * 거울 규칙: 사용자가 왼쪽을 보면 화면 속 아바타도 화면 왼쪽을 본다.
  * 그래서 yaw/roll 부호를 뒤집고 눈 좌우도 바꾼다.
  */
-export default function VrmAvatar({ signalRef, path, focusState, className }: VrmAvatarProps) {
+export default function VrmAvatar({
+  signalRef,
+  path,
+  focusState,
+  anchor = "center",
+  className,
+}: VrmAvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const focusRef = useRef<FocusState | undefined>(focusState);
+  const anchorRef = useRef<AvatarAnchor>(anchor);
+  /** 로딩 후 결정되는 머리 위치 — anchor가 바뀌면 카메라만 다시 잡는다 */
+  const frameRef = useRef<((anchor: AvatarAnchor) => void) | null>(null);
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     focusRef.current = focusState;
   }, [focusState]);
+  useEffect(() => {
+    anchorRef.current = anchor;
+    frameRef.current?.(anchor);
+  }, [anchor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -144,8 +162,13 @@ export default function VrmAvatar({ signalRef, path, focusState, className }: Vr
         vrm.scene.updateMatrixWorld(true);
         const headPos = new THREE.Vector3();
         (head ?? vrm.scene).getWorldPosition(headPos);
-        camera.position.set(headPos.x, headPos.y + 0.06, headPos.z + 0.95);
-        camera.lookAt(headPos.x, headPos.y + 0.06, headPos.z);
+        frameRef.current = (a) => {
+          // 카메라를 내리고 수평으로 보면 얼굴이 화면 위쪽으로 올라간다
+          const y = headPos.y + ANCHOR_OFFSET_Y[a];
+          camera.position.set(headPos.x, y, headPos.z + CAMERA_DISTANCE);
+          camera.lookAt(headPos.x, y, headPos.z);
+        };
+        frameRef.current(anchorRef.current);
 
         setStatus("ready");
         clock.start();
@@ -165,6 +188,7 @@ export default function VrmAvatar({ signalRef, path, focusState, className }: Vr
       disposed = true;
       cancelAnimationFrame(rafId);
       observer.disconnect();
+      frameRef.current = null;
       if (vrm) {
         scene.remove(vrm.scene);
         VRMUtils.deepDispose(vrm.scene);

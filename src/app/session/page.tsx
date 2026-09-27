@@ -324,6 +324,7 @@ export default function SessionPage() {
             signalRef={signalRef}
             preset={getPresetById(presetId)}
             focusState={focusState}
+            anchor={step === "session" ? "center" : "upper"}
             className="min-h-0 w-full flex-1"
           />
           <StateBanner focusState={focusState} paused={Boolean(paused)} />

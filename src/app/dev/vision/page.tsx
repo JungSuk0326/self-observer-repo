@@ -220,6 +220,7 @@ export default function VisionDevPage() {
         signalRef={signalRef}
         preset={getPresetById(presetId)}
         focusState={focusState}
+        anchor={inSession ? "center" : "upper"}
         className="min-h-0 w-full flex-1"
       />
 
