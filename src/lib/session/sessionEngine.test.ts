@@ -164,3 +164,19 @@ describe("SessionEngine — 시선 이탈 집계", () => {
     expect(s.end(20_000).lookAwayCount).toBe(1);
   });
 });
+
+describe("SessionEngine — 최장 연속 집중", () => {
+  it("이탈과 휴식이 연속 구간을 끊고, 가장 긴 구간을 남긴다", () => {
+    const s = new SessionEngine();
+    s.start(0);
+    s.update(10_000, "focused"); // 0~10s 집중
+    s.update(10_000, "away");
+    s.update(12_000, "away"); // 이탈로 끊김
+    s.update(12_000, "focused");
+    s.update(30_000, "focused"); // 12~30s = 18s 연속
+    s.pause(30_000);
+    s.resume(40_000); // 휴식으로 끊김
+    s.update(45_000, "focused"); // 5s
+    expect(s.end(45_000).longestFocusMs).toBe(18_000);
+  });
+});

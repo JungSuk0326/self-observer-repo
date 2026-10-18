@@ -24,3 +24,16 @@ describe("페르소나 문구 세트", () => {
     expect(getPersonaById(null).id).toBe("mentor");
   });
 });
+
+describe("페르소나 인사", () => {
+  const KINDS = ["first", "again_today", "streak", "yesterday", "long_gap"] as const;
+  for (const p of PERSONAS) {
+    it(`${p.name}: 인사 5종과 자리표시자`, () => {
+      for (const k of KINDS) expect(p.greetings[k].length).toBeGreaterThan(0);
+      expect(p.greetings.again_today).toContain("{minutes}");
+      expect(p.greetings.yesterday).toContain("{minutes}");
+      expect(p.greetings.streak).toContain("{days}");
+      expect(p.greetings.long_gap).toContain("{days}");
+    });
+  }
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { formatGoalMinutes } from "@/lib/format";
+import { formatDuration, formatGoalMinutes } from "@/lib/format";
 import { PERSONAS } from "@/lib/message/personas";
 
 /** 목표 시간 선택지(분). null은 자유 모드(스톱워치) */
@@ -13,6 +13,9 @@ interface ReadyPanelProps {
   onToggleVoice: () => void;
   personaId: string;
   onPersonaChange: (id: string) => void;
+  streakDays: number;
+  todayFocusMs: number;
+  onOpenHistory: () => void;
   calibrated: boolean;
   onChangeAvatar: () => void;
   onRecalibrate: () => void;
@@ -30,6 +33,9 @@ export default function ReadyPanel({
   onToggleVoice,
   personaId,
   onPersonaChange,
+  streakDays,
+  todayFocusMs,
+  onOpenHistory,
   calibrated,
   onChangeAvatar,
   onRecalibrate,
@@ -37,7 +43,15 @@ export default function ReadyPanel({
 }: ReadyPanelProps) {
   return (
     <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-3xl border-t border-gray-800 bg-background/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] backdrop-blur">
-      <h2 className="mb-1 text-lg font-bold">준비됐습니다</h2>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-bold">준비됐습니다</h2>
+        <button
+          onClick={onOpenHistory}
+          className="rounded-full border border-gray-700 bg-surface px-3 py-1 text-xs font-semibold"
+        >
+          🔥 {streakDays}일 · 오늘 {todayFocusMs > 0 ? formatDuration(todayFocusMs) : "아직"} · 기록
+        </button>
+      </div>
       <p className="mb-4 text-sm text-muted">
         얼마나 집중할까요? 목표 없이 스톱워치로만 재도 됩니다.
       </p>

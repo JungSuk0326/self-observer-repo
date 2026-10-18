@@ -12,7 +12,12 @@ import MessageToast from "@/components/session/MessageToast";
 import ReadyPanel from "@/components/session/ReadyPanel";
 import SessionHud from "@/components/session/SessionHud";
 import StateBanner from "@/components/session/StateBanner";
-import SummaryCard from "@/components/session/SummaryCard";
+import HistorySheet from "@/components/session/HistorySheet";
+import SessionReport from "@/components/session/SessionReport";
+import { loadSessions, saveSession } from "@/lib/history/db";
+import { evaluateSession, pickGreeting, streakDays, toRecord, dayKey } from "@/lib/history/stats";
+import type { SessionEvaluation, SessionRecord } from "@/lib/history/types";
+import { fillTemplate } from "@/lib/message/messages";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { DEFAULT_PRESET, getPresetById } from "@/lib/avatar/presets";
 import { Calibrator, applyBaseline } from "@/lib/detection/calibration";
@@ -27,7 +32,7 @@ import { OnboardingMachine } from "@/lib/onboarding/onboardingMachine";
 import { INITIAL_ONBOARDING_STATE } from "@/lib/onboarding/types";
 import type { SavedSetup } from "@/lib/onboarding/types";
 import { SessionEngine } from "@/lib/session/sessionEngine";
-import type { SessionSnapshot, SessionSummary } from "@/lib/session/types";
+import type { SessionSnapshot } from "@/lib/session/types";
 import {
   loadAvatarId,
   loadCalibration,
@@ -42,6 +47,8 @@ import {
 } from "@/lib/storage";
 import type { HeadPose } from "@/lib/vision/types";
 
+/** 이보다 짧은 세션은 히스토리에 남기지 않는다 (연속 출석 부풀리기 방지) */
+const MIN_SAVED_MS = 60_000;
 /** 엔진 갱신 주기 — 추론은 10Hz이므로 그 절반이면 충분하다 */
 const TICK_MS = 200;
 /** 캘리브레이션 샘플 수: 5Hz × 3초 */
@@ -93,7 +100,17 @@ export default function SessionPage() {
 
   const [focusState, setFocusState] = useState<FocusState>("initializing");
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
-  const [summary, setSummary] = useState<SessionSummary | null>(null);
+  /** 세션 히스토리 (G-2) — null이면 아직 불러오는 중 */
+  const [records, setRecords] = useState<SessionRecord[] | null>(null);
+  const [report, setReport] = useState<{
+    record: SessionRecord;
+    evaluation: SessionEvaluation;
+    saved: boolean;
+  } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  /** 날짜 계산용 벽시계 — 렌더 중 Date.now()를 부르지 않도록 이벤트에서 갱신 */
+  const [wallNow, setWallNow] = useState(0);
+  const greetedRef = useRef(false);
   const [toast, setToast] = useState<SupervisorMessage | null>(null);
   const [calProgress, setCalProgress] = useState<number | null>(null);
 
@@ -142,6 +159,12 @@ export default function SessionPage() {
     machineRef.current.begin();
     syncMachine();
     void start();
+    if (records === null) {
+      void loadSessions().then((loaded) => {
+        setRecords(loaded);
+        setWallNow(Date.now());
+      });
+    }
   };
 
   // 카메라 준비 결과를 온보딩 단계에 반영
@@ -290,7 +313,7 @@ export default function SessionPage() {
   };
 
   const startSession = () => {
-    setSummary(null);
+    setReport(null);
     const session = new SessionEngine({
       goalDurationMs: goalMinutes === null ? null : goalMinutes * 60_000,
     });
@@ -313,7 +336,29 @@ export default function SessionPage() {
   const endSession = () => {
     const session = sessionRef.current;
     if (!session) return;
-    setSummary(session.end(nowTs()));
+    const summary = session.end(nowTs());
+    const endedWall = Date.now();
+    setWallNow(endedWall);
+    const record = toRecord(summary, endedWall, {
+      id: typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      personaId,
+      avatarId: presetId,
+    });
+    const previous = records ?? [];
+    const evaluation = evaluateSession(record, previous);
+    // 실수로 켰다 끈 세션이 연속 출석을 만들면 안 된다
+    const saved = record.elapsedMs >= MIN_SAVED_MS;
+    if (saved) {
+      void saveSession(record);
+      setRecords([...previous, record]);
+    }
+    setReport({ record, evaluation, saved });
+    // 최고 기록·좋은 등급이면 아바타도 같이 기뻐한다
+    if (evaluation.newBests.length > 0 || evaluation.grade === "S" || evaluation.grade === "A") {
+      emoteRef.current = { name: "happy", startedAt: performance.now(), durationMs: 3500, strength: 1 };
+    }
     sessionRef.current = null;
     setSnapshot(null);
     setToast(null);
@@ -327,6 +372,22 @@ export default function SessionPage() {
   };
 
   const { step, showFaceGuide } = onboarding;
+
+  // 기억하는 감독관 — 준비 화면에 처음 들어올 때 지난 기록을 꺼내 인사한다
+  useEffect(() => {
+    if (step !== "ready" || records === null || greetedRef.current) return;
+    greetedRef.current = true;
+    const persona = personaRef.current;
+    const greeting = pickGreeting(records, Date.now());
+    const text = fillTemplate(persona.greetings[greeting.kind], greeting.vars);
+    setToast({ kind: "session_start", tone: "info", text, at: performance.now() });
+    if (voiceOnRef.current) speakerRef.current?.speak(text, persona.voice);
+    emoteRef.current = { name: "happy", startedAt: performance.now(), durationMs: 1800, strength: 0.6 };
+  }, [step, records]);
+
+  const todayFocusMs = (records ?? [])
+    .filter((r) => dayKey(r.endedAtWall) === dayKey(wallNow))
+    .reduce((s, r) => s + r.focusedMs, 0);
   const cameraLive = step === "avatar" || step === "calibration" || step === "ready" || step === "session";
   const paused = snapshot?.phase === "paused";
 
@@ -400,6 +461,12 @@ export default function SessionPage() {
                 onGoalChange={changeGoal}
                 personaId={personaId}
                 onPersonaChange={changePersona}
+                streakDays={streakDays(records ?? [], wallNow)}
+                todayFocusMs={todayFocusMs}
+                onOpenHistory={() => {
+                  setWallNow(Date.now());
+                  setHistoryOpen(true);
+                }}
                 voiceOn={voiceOn}
                 onToggleVoice={toggleVoice}
                 calibrated={baseline !== null}
@@ -445,7 +512,15 @@ export default function SessionPage() {
         </>
       )}
 
-      {summary && <SummaryCard summary={summary} onClose={() => setSummary(null)} />}
+      {report && (
+        <SessionReport
+          record={report.record}
+          evaluation={report.evaluation}
+          saved={report.saved}
+          onClose={() => setReport(null)}
+        />
+      )}
+      {historyOpen && <HistorySheet records={records ?? []} now={wallNow} onClose={() => setHistoryOpen(false)} />}
     </main>
   );
 }

@@ -39,6 +39,8 @@ export interface SessionSummary {
   awayCount: number;
   headDownCount: number;
   lookAwayCount: number;
+  /** 끊김 없이 이어진 최장 집중 구간(ms). 이탈·휴식이 구간을 끊는다 */
+  longestFocusMs: number;
   /** 집중률(0~1). elapsed 0이면 0 */
   focusRatio: number;
 }

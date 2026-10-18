@@ -1,5 +1,6 @@
 import { MESSAGE_TEMPLATES } from "./messages";
 import type { MessageKind } from "./types";
+import type { GreetingKind } from "@/lib/history/types";
 
 /**
  * 감독관 페르소나. 같은 규칙 엔진(MessageEngine)에 문구 세트와 음성 톤만 바꿔 끼운다.
@@ -18,6 +19,11 @@ export interface Persona {
   /** Web Speech 음성 톤 */
   voice: { rate: number; pitch: number };
   templates: Record<MessageKind, readonly string[]>;
+  /**
+   * 다음 방문 때의 첫마디 — 지난 기록을 기억한다는 느낌.
+   * 자리표시자: {minutes}(again_today/yesterday), {days}(streak/long_gap)
+   */
+  greetings: Record<GreetingKind, string>;
 }
 
 const DRILL: Record<MessageKind, readonly string[]> = {
@@ -94,6 +100,13 @@ export const PERSONAS: Persona[] = [
     tagline: "부드럽게 다독여 줘요",
     voice: { rate: 1.0, pitch: 1.0 },
     templates: MESSAGE_TEMPLATES,
+    greetings: {
+      first: "처음 뵙네요. 오늘부터 제가 옆에서 지켜볼게요.",
+      again_today: "오늘 또 오셨네요. 벌써 {minutes}분 하셨어요.",
+      streak: "오늘 하면 {days}일 연속이에요. 이어가 볼까요?",
+      yesterday: "어제는 {minutes}분 집중하셨죠. 오늘은 조금 더 가볼까요?",
+      long_gap: "{days}일 만이에요. 다시 와 주셔서 반가워요.",
+    },
   },
   {
     id: "drill",
@@ -102,6 +115,13 @@ export const PERSONAS: Persona[] = [
     tagline: "짧고 단호하게 잡아 줘요",
     voice: { rate: 1.1, pitch: 0.8 },
     templates: DRILL,
+    greetings: {
+      first: "신병 확인. 오늘부터 내가 관리한다.",
+      again_today: "오늘 두 번째 출석. 현재 {minutes}분 누적.",
+      streak: "오늘 하면 {days}일 연속이다. 기록 끊지 않는다.",
+      yesterday: "어제 {minutes}분. 오늘은 그 이상 간다.",
+      long_gap: "{days}일 공백. 오늘부터 다시 시작한다.",
+    },
   },
   {
     id: "cat",
@@ -110,6 +130,13 @@ export const PERSONAS: Persona[] = [
     tagline: "관심 없는 척 다 지켜봐요",
     voice: { rate: 1.05, pitch: 1.5 },
     templates: CAT,
+    greetings: {
+      first: "처음 보는 얼굴이냥. ...잘 부탁한다냥.",
+      again_today: "또 왔냥? 오늘 벌써 {minutes}분 했다냥.",
+      streak: "오늘 하면 {days}일 연속이냥. ...딱히 세고 있던 건 아니다냥.",
+      yesterday: "어제 {minutes}분 했지냥. 오늘은 더 해라냥.",
+      long_gap: "{days}일이나 안 왔냥! ...보고 싶었던 건 아니다냥.",
+    },
   },
 ];
 

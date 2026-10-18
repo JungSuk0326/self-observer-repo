@@ -32,6 +32,8 @@ export class SessionEngine {
   private awayCount = 0;
   private headDownCount = 0;
   private lookAwayCount = 0;
+  private currentRunMs = 0;
+  private longestFocusMs = 0;
 
   constructor(config: Partial<SessionConfig> = {}) {
     this.config = { goalDurationMs: null, ...config };
@@ -95,6 +97,7 @@ export class SessionEngine {
       awayCount: this.awayCount,
       headDownCount: this.headDownCount,
       lookAwayCount: this.lookAwayCount,
+      longestFocusMs: this.longestFocusMs,
       focusRatio: elapsedMs > 0 ? this.focusedMs / elapsedMs : 0,
     };
   }
@@ -125,6 +128,7 @@ export class SessionEngine {
 
     if (this.phase === "paused") {
       this.pausedMs += delta;
+      this.currentRunMs = 0; // 휴식은 연속 집중을 끊는다
       return;
     }
     // running: 직전 구간의 상태(lastFocusState) 기준으로 귀속
@@ -134,8 +138,11 @@ export class SessionEngine {
       this.lastFocusState === "looking_away"
     ) {
       this.distractedMs += delta;
+      this.currentRunMs = 0;
     } else {
       this.focusedMs += delta;
+      this.currentRunMs += delta;
+      this.longestFocusMs = Math.max(this.longestFocusMs, this.currentRunMs);
     }
   }
 
