@@ -20,6 +20,8 @@ import { DetectionEngine } from "@/lib/detection/detectionEngine";
 import type { FocusState } from "@/lib/detection/types";
 import { MessageEngine } from "@/lib/message/messageEngine";
 import { createSpeaker, type Speaker } from "@/lib/message/speech";
+import { DEFAULT_PERSONA, getPersonaById } from "@/lib/message/personas";
+import { emoteForMessage, type Emote } from "@/lib/avatar/emote";
 import type { MessageTone, SupervisorMessage } from "@/lib/message/types";
 import { OnboardingMachine } from "@/lib/onboarding/onboardingMachine";
 import { INITIAL_ONBOARDING_STATE } from "@/lib/onboarding/types";
@@ -30,6 +32,8 @@ import {
   loadAvatarId,
   loadCalibration,
   loadGoalMinutes,
+  loadPersonaId,
+  savePersonaId,
   loadVoiceEnabled,
   saveAvatarId,
   saveCalibration,
@@ -82,6 +86,10 @@ export default function SessionPage() {
   const [voiceOn, setVoiceOn] = useState(false);
   const voiceOnRef = useRef(false); // 5Hz 루프가 리렌더 없이 읽는 값
   const speakerRef = useRef<Speaker | null>(null);
+  const [personaId, setPersonaId] = useState(DEFAULT_PERSONA.id);
+  const personaRef = useRef(DEFAULT_PERSONA); // 5Hz 루프·음성이 리렌더 없이 읽는 값
+  /** 감독관 메시지에 맞춘 아바타 표정 반응 */
+  const emoteRef = useRef<Emote | null>(null);
 
   const [focusState, setFocusState] = useState<FocusState>("initializing");
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
@@ -96,7 +104,16 @@ export default function SessionPage() {
     if (messages.length === 0) return;
     const last = messages[messages.length - 1];
     setToast(last);
-    if (voiceOnRef.current) speakerRef.current?.speak(last.text);
+    if (voiceOnRef.current) speakerRef.current?.speak(last.text, personaRef.current.voice);
+    // 표정은 반응이 있는 메시지 중 마지막 것
+    const now = performance.now();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const emote = emoteForMessage(messages[i].kind, now);
+      if (emote) {
+        emoteRef.current = emote;
+        break;
+      }
+    }
   }, []);
 
   // ── 온보딩 시작: 저장된 설정을 복원하고 카메라를 요청한다 ──
@@ -105,6 +122,7 @@ export default function SessionPage() {
     const savedAvatar = loadAvatarId();
     const savedCalibration = loadCalibration();
     const savedGoal = loadGoalMinutes();
+    applyPersona(getPersonaById(loadPersonaId()).id);
     if (savedAvatar) setPresetId(getPresetById(savedAvatar).id);
     if (savedCalibration) setBaseline(savedCalibration);
     if (savedGoal !== null) setGoalMinutes(savedGoal);
@@ -247,6 +265,25 @@ export default function SessionPage() {
     saveVoiceEnabled(next);
   };
 
+  function applyPersona(id: string) {
+    const persona = getPersonaById(id);
+    personaRef.current = persona;
+    setPersonaId(persona.id);
+    messageRef.current.setTemplates(persona.templates);
+  }
+
+  const changePersona = (id: string) => {
+    applyPersona(id);
+    savePersonaId(id);
+    // 고른 감독관의 목소리로 한마디 — 선택 피드백 겸 음성 톤 미리 듣기
+    const persona = personaRef.current;
+    // 세션 시작 인사(첫 문구)와 겹치지 않게 마지막 문구로 미리 듣기
+    const starts = persona.templates.session_start;
+    const line = starts[starts.length - 1];
+    if (voiceOnRef.current) speakerRef.current?.speak(line, persona.voice);
+    setToast({ kind: "session_start", tone: "info", text: line, at: performance.now() });
+  };
+
   const changeGoal = (minutes: number | null) => {
     setGoalMinutes(minutes);
     saveGoalMinutes(minutes);
@@ -324,6 +361,7 @@ export default function SessionPage() {
             signalRef={signalRef}
             preset={getPresetById(presetId)}
             focusState={focusState}
+            emoteRef={emoteRef}
             anchor={step === "session" ? "center" : "upper"}
             className="min-h-0 w-full flex-1"
           />
@@ -360,6 +398,8 @@ export default function SessionPage() {
               <ReadyPanel
                 goalMinutes={goalMinutes}
                 onGoalChange={changeGoal}
+                personaId={personaId}
+                onPersonaChange={changePersona}
                 voiceOn={voiceOn}
                 onToggleVoice={toggleVoice}
                 calibrated={baseline !== null}

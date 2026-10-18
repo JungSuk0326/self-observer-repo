@@ -7,6 +7,9 @@ import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { assetUrl } from "@/lib/assetUrl";
 import type { AvatarAnchor } from "@/components/Avatar";
 import { PoseHold, type Pose } from "@/lib/avatar/poseHold";
+import { emoteWeight, type Emote, type EmoteName } from "@/lib/avatar/emote";
+
+const EMOTES: EmoteName[] = ["happy", "surprised", "sad", "relaxed"];
 import type { FocusState } from "@/lib/detection/types";
 import type { FaceSignal } from "@/lib/vision/types";
 
@@ -31,6 +34,7 @@ interface VrmAvatarProps {
   /** 감지 엔진 상태 — 얼굴을 놓쳤을 때 무엇을 그릴지 (PoseHold 참고) */
   focusState?: FocusState;
   anchor?: AvatarAnchor;
+  emoteRef?: React.RefObject<Emote | null>;
   className?: string;
 }
 
@@ -51,6 +55,7 @@ export default function VrmAvatar({
   path,
   focusState,
   anchor = "center",
+  emoteRef,
   className,
 }: VrmAvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -119,7 +124,13 @@ export default function VrmAvatar({
         em.setValue("blinkLeft", s.blinkR); // 거울: 내 오른눈 = 화면 왼쪽 눈
         em.setValue("blinkRight", s.blinkL);
         em.setValue("aa", s.jaw);
-        em.setValue("happy", s.smile * 0.8);
+        // 표정 반응은 추적 미소 위에 최대값으로 얹는다 (추적 값을 지우지 않는다)
+        const emote = emoteRef?.current ?? null;
+        const w = emoteWeight(emote, performance.now());
+        for (const name of EMOTES) {
+          const tracked = name === "happy" ? s.smile * 0.8 : 0;
+          em.setValue(name, Math.max(tracked, emote?.name === name ? w : 0));
+        }
       }
     };
 
@@ -195,7 +206,7 @@ export default function VrmAvatar({
       }
       renderer.dispose();
     };
-  }, [path, signalRef]);
+  }, [path, signalRef, emoteRef]);
 
   return (
     <div className={`relative ${className ?? ""}`}>

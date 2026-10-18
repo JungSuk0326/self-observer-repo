@@ -8,6 +8,7 @@ const VrmAvatar = dynamic(() => import("@/components/VrmAvatar"), { ssr: false }
 import type { AvatarPreset } from "@/lib/avatar/presets";
 import type { FocusState } from "@/lib/detection/types";
 import type { FaceSignal } from "@/lib/vision/types";
+import type { Emote } from "@/lib/avatar/emote";
 
 /**
  * 얼굴을 화면 어디에 둘지. 온보딩 단계는 하단 시트가 화면 아래 절반을 덮으므로
@@ -20,6 +21,8 @@ interface AvatarProps {
   preset: AvatarPreset;
   focusState?: FocusState;
   anchor?: AvatarAnchor;
+  /** 감독관 메시지에 맞춘 짧은 표정 반응 — 렌더 루프가 ref로 직접 읽는다 */
+  emoteRef?: React.RefObject<Emote | null>;
   className?: string;
 }
 
@@ -29,6 +32,7 @@ export default function Avatar({
   preset,
   focusState,
   anchor = "center",
+  emoteRef,
   className,
 }: AvatarProps) {
   if (preset.kind === "vrm") {
@@ -38,6 +42,7 @@ export default function Avatar({
         path={preset.path}
         focusState={focusState}
         anchor={anchor}
+        emoteRef={emoteRef}
         className={className}
       />
     );
@@ -48,6 +53,7 @@ export default function Avatar({
       preset={preset}
       focusState={focusState}
       anchor={anchor}
+      emoteRef={emoteRef}
       className={className}
     />
   );

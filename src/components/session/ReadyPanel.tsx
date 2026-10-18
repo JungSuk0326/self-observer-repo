@@ -1,6 +1,7 @@
 "use client";
 
 import { formatGoalMinutes } from "@/lib/format";
+import { PERSONAS } from "@/lib/message/personas";
 
 /** 목표 시간 선택지(분). null은 자유 모드(스톱워치) */
 const GOAL_OPTIONS: (number | null)[] = [25, 50, 90, null];
@@ -10,6 +11,8 @@ interface ReadyPanelProps {
   onGoalChange: (minutes: number | null) => void;
   voiceOn: boolean;
   onToggleVoice: () => void;
+  personaId: string;
+  onPersonaChange: (id: string) => void;
   calibrated: boolean;
   onChangeAvatar: () => void;
   onRecalibrate: () => void;
@@ -25,6 +28,8 @@ export default function ReadyPanel({
   onGoalChange,
   voiceOn,
   onToggleVoice,
+  personaId,
+  onPersonaChange,
   calibrated,
   onChangeAvatar,
   onRecalibrate,
@@ -52,6 +57,27 @@ export default function ReadyPanel({
               }`}
             >
               {formatGoalMinutes(opt)}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="mb-2 text-sm font-semibold">감독관</p>
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        {PERSONAS.map((p) => {
+          const selected = p.id === personaId;
+          return (
+            <button
+              key={p.id}
+              onClick={() => onPersonaChange(p.id)}
+              aria-pressed={selected}
+              className={`flex flex-col items-center gap-0.5 rounded-xl border-2 px-1 py-2.5 transition-colors ${
+                selected ? "border-blue-500 bg-blue-500/15" : "border-gray-800 bg-surface"
+              }`}
+            >
+              <span className="text-2xl">{p.emoji}</span>
+              <span className="text-xs font-semibold">{p.name}</span>
+              <span className="text-[10px] leading-tight text-muted">{p.tagline}</span>
             </button>
           );
         })}

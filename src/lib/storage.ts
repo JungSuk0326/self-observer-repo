@@ -12,6 +12,7 @@ const KEYS = {
   calibration: "fg.calibration",
   voice: "fg.voice",
   goal: "fg.goalMinutes",
+  persona: "fg.persona",
 } as const;
 
 function readRaw(key: string): string | null {
@@ -72,6 +73,14 @@ export function loadGoalMinutes(): number | null {
 
 export function saveGoalMinutes(minutes: number | null): void {
   writeRaw(KEYS.goal, minutes === null ? "" : String(minutes));
+}
+
+export function loadPersonaId(): string | null {
+  return readRaw(KEYS.persona);
+}
+
+export function savePersonaId(id: string): void {
+  writeRaw(KEYS.persona, id);
 }
 
 function isHeadPose(v: unknown): v is HeadPose {

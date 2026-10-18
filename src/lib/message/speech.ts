@@ -10,7 +10,8 @@ export interface Speaker {
   readonly supported: boolean;
   /** 사용자 제스처 핸들러 안에서 호출 — 이후 speak()가 자동재생 정책에 걸리지 않음 */
   unlock(): void;
-  speak(text: string): void;
+  /** voice: 페르소나 음성 톤(rate/pitch). 없으면 기본 */
+  speak(text: string, voice?: { rate: number; pitch: number }): void;
   cancel(): void;
 }
 
@@ -38,10 +39,15 @@ export function createSpeaker(lang = "ko-KR"): Speaker {
       synth.cancel();
       synth.speak(utter(" "));
     },
-    speak(text) {
+    speak(text, voice) {
       if (!synth) return;
       synth.cancel();
-      synth.speak(utter(text));
+      const u = utter(text);
+      if (voice) {
+        u.rate = voice.rate;
+        u.pitch = voice.pitch;
+      }
+      synth.speak(u);
     },
     cancel() {
       synth?.cancel();

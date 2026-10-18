@@ -210,3 +210,15 @@ describe("MessageEngine — 시선 이탈", () => {
     ).toEqual([]);
   });
 });
+
+describe("MessageEngine — 페르소나", () => {
+  it("생성자로 받은 문구 세트를 쓰고, setTemplates로 바꾸면 다음 메시지부터 적용된다", async () => {
+    const { getPersonaById } = await import("./personas");
+    const drill = getPersonaById("drill").templates;
+    const cat = getPersonaById("cat").templates;
+    const e = new MessageEngine({}, drill);
+    expect(e.update(tick(0))[0].text).toBe(drill.session_start[0]);
+    e.setTemplates(cat);
+    expect(e.update(tick(5000, [ev("absence_start", 5000)]))[0].text).toBe(cat.away[0]);
+  });
+});

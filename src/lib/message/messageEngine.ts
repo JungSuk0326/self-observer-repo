@@ -1,6 +1,8 @@
 import type { MessageConfig, MessageInput, MessageKind, MessageTone, SupervisorMessage } from "./types";
 import { DEFAULT_MESSAGE_CONFIG } from "./types";
 import { MESSAGE_TEMPLATES, fillTemplate } from "./messages";
+
+type Templates = Record<MessageKind, readonly string[]>;
 import type { SessionPhase } from "@/lib/session/types";
 
 const TONE: Record<MessageKind, MessageTone> = {
@@ -34,6 +36,8 @@ const TONE: Record<MessageKind, MessageTone> = {
  */
 export class MessageEngine {
   private readonly config: MessageConfig;
+  /** 페르소나 문구 세트 — 세션 중에도 바꿀 수 있다(다음 메시지부터 적용) */
+  private templates: Templates;
 
   private lastPhase: SessionPhase | null = null;
   private lastWarnAt: Partial<Record<MessageKind, number>> = {};
@@ -49,8 +53,13 @@ export class MessageEngine {
   private lastMilestone = 0;
   private goalSaid = false;
 
-  constructor(config: Partial<MessageConfig> = {}) {
+  constructor(config: Partial<MessageConfig> = {}, templates: Templates = MESSAGE_TEMPLATES) {
     this.config = { ...DEFAULT_MESSAGE_CONFIG, ...config };
+    this.templates = templates;
+  }
+
+  setTemplates(templates: Templates): void {
+    this.templates = templates;
   }
 
   update(input: MessageInput): SupervisorMessage[] {
@@ -125,7 +134,7 @@ export class MessageEngine {
       timestamp - this.awaySince >= this.config.longAbsenceMs
     ) {
       this.longAbsenceSaid = true;
-      out.push(this.make("away_long", timestamp, MESSAGE_TEMPLATES.away_long[0]));
+      out.push(this.make("away_long", timestamp, this.templates.away_long[0]));
     }
 
     // 목표 달성 — 세션당 1번, 같은 tick의 이정표보다 우선
@@ -133,7 +142,7 @@ export class MessageEngine {
     if (session.goalReached && !this.goalSaid) {
       this.goalSaid = true;
       goalJustSaid = true;
-      out.push(this.make("goal_reached", timestamp, MESSAGE_TEMPLATES.goal_reached[0]));
+      out.push(this.make("goal_reached", timestamp, this.templates.goal_reached[0]));
     }
 
     // 집중 이정표 — 간격을 새로 넘길 때 1번 (이탈 중엔 내지 않음)
@@ -188,7 +197,7 @@ export class MessageEngine {
     if (last !== undefined && at - last < this.config.warnCooldownMs) return null;
     this.lastWarnAt[kind] = at;
 
-    const templates = MESSAGE_TEMPLATES[kind];
+    const templates = this.templates[kind];
     const level = Math.min(count - 1, templates.length - 1);
     return this.make(kind, at, templates[level]);
   }
@@ -199,7 +208,7 @@ export class MessageEngine {
     at: number,
     vars: Record<string, string | number> = {},
   ): SupervisorMessage {
-    const templates = MESSAGE_TEMPLATES[kind];
+    const templates = this.templates[kind];
     const idx = this.encourageIdx[kind] ?? 0;
     this.encourageIdx[kind] = (idx + 1) % templates.length;
     return this.make(kind, at, fillTemplate(templates[idx], vars));

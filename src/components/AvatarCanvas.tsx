@@ -5,6 +5,7 @@ import type { FaceSignal } from "@/lib/vision/types";
 import type { FocusState } from "@/lib/detection/types";
 import type { CanvasAvatarPreset } from "@/lib/avatar/presets";
 import { PoseHold, type Pose } from "@/lib/avatar/poseHold";
+import { applyEmoteToPose, emoteWeight, type Emote } from "@/lib/avatar/emote";
 import type { AvatarAnchor } from "@/components/Avatar";
 
 /** 얼굴 중심의 세로 위치(캔버스 높이 비율) */
@@ -20,6 +21,7 @@ interface AvatarCanvasProps {
   /** 감지 엔진 상태 — 얼굴을 놓쳤을 때 무엇을 그릴지 (PoseHold 참고) */
   focusState?: FocusState;
   anchor?: AvatarAnchor;
+  emoteRef?: React.RefObject<Emote | null>;
   className?: string;
 }
 
@@ -33,6 +35,7 @@ export default function AvatarCanvas({
   preset,
   focusState,
   anchor = "center",
+  emoteRef,
   className,
 }: AvatarCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -80,7 +83,9 @@ export default function AvatarCanvas({
         return;
       }
 
-      const { pitch, yaw, roll, blinkL, blinkR, jaw, brow, smile } = pose;
+      const emote = emoteRef?.current ?? null;
+      const shown = emote ? applyEmoteToPose(pose, emote.name, emoteWeight(emote, performance.now())) : pose;
+      const { pitch, yaw, roll, blinkL, blinkR, jaw, brow, smile } = shown;
       const cx = w / 2 + (-yaw / 45) * w * 0.12;
       const cy = h * ANCHOR_Y[anchorRef.current] + (pitch / 45) * h * 0.1;
       const R = Math.min(w, h) * 0.27;
@@ -176,7 +181,7 @@ export default function AvatarCanvas({
 
     rafId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafId);
-  }, [signalRef]);
+  }, [signalRef, emoteRef]);
 
   return <canvas ref={canvasRef} className={className} />;
 }
