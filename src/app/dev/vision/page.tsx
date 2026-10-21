@@ -57,6 +57,7 @@ export default function VisionDevPage() {
   const engineRef = useRef(new DetectionEngine());
   const sessionRef = useRef<SessionEngine | null>(null);
   const [focusState, setFocusState] = useState<FocusState>("initializing");
+  const [nosePicking, setNosePicking] = useState(false);
   const [sessionSnap, setSessionSnap] = useState<SessionSnapshot | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [presetId, setPresetId] = useState("bear");
@@ -157,7 +158,7 @@ export default function VisionDevPage() {
       }
 
       const corrected = applyBaseline(s.pose, baseline);
-      const { state, events } = engine.update({
+      const { state, events, nosePicking: nose } = engine.update({
         present: s.present,
         pitch: corrected.pitch,
         yaw: corrected.yaw,
@@ -165,6 +166,7 @@ export default function VisionDevPage() {
         timestamp: s.timestamp,
       });
       setFocusState(state);
+      setNosePicking(nose);
       const session = sessionRef.current;
       let snap: SessionSnapshot | null = null;
       if (session) {
@@ -306,11 +308,14 @@ export default function VisionDevPage() {
           {(signal?.pose.yaw ?? 0).toFixed(0)}°
           <br />
           <span className="text-gray-400">손</span>{" "}
-          {signal?.hand?.present
-            ? `코 ${signal.hand.fingerToNose.toFixed(2)} · y ${signal.hand.offsetY.toFixed(1)} · 크기 ${signal.hand.size.toFixed(2)}`
-            : signal?.hand
-              ? "없음"
-              : "—"}
+          {signal && !signal.handModelReady
+            ? "모델 없음"
+            : signal?.hand?.present
+              ? `코 ${signal.hand.fingerToNose.toFixed(2)} · y ${signal.hand.offsetY.toFixed(1)} · 크기 ${signal.hand.size.toFixed(2)}`
+              : signal?.present
+                ? "안 보임"
+                : "—"}
+          {nosePicking && <span className="ml-1 text-amber-300">👃 코 파기</span>}
         </div>
       )}
 

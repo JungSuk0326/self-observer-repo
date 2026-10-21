@@ -83,6 +83,10 @@ export class FaceTracker {
         baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
         runningMode: "VIDEO",
         numHands: 2,
+        // 얼굴에 겹친 손(코 파기·턱 괴기)은 손바닥이 가려져 신뢰도가 낮다 — 기본 0.5에서 낮춘다
+        minHandDetectionConfidence: 0.3,
+        minHandPresenceConfidence: 0.3,
+        minTrackingConfidence: 0.3,
       }).catch((e: unknown) => {
         console.warn("손 모델 로딩 실패 — 손 딴짓 감지 없이 진행", e);
         return null;
@@ -180,7 +184,14 @@ export class FaceTracker {
         ? handGeometry(faceLandmarks, this.lastHand?.landmarks ?? [])
         : null;
 
-    return { present, pose, smoothed: { ...this.smoothed }, hand, timestamp: ts };
+    return {
+      present,
+      pose,
+      smoothed: { ...this.smoothed },
+      hand,
+      handModelReady: this.handLandmarker !== null,
+      timestamp: ts,
+    };
   }
 
   private buildStats(): TrackerStats {

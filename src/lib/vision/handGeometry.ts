@@ -10,8 +10,11 @@ export interface Point {
 const NOSE_TIP = 1;
 const CHEEK_RIGHT = 234;
 const CHEEK_LEFT = 454;
-/** MediaPipe Hand 인덱스: 손가락 끝 5개 */
-const FINGERTIPS = [4, 8, 12, 16, 20];
+/**
+ * MediaPipe Hand 인덱스: 손가락 끝 5개 + 끝 관절(DIP) 5개.
+ * 코를 팔 때 손가락 끝은 콧구멍에 가려져 좌표가 튀므로, 바로 아래 관절도 같이 본다.
+ */
+const FINGER_POINTS = [4, 8, 12, 16, 20, 3, 7, 11, 15, 19];
 
 /**
  * 얼굴·손 랜드마크 → HandSignal (순수 함수).
@@ -28,7 +31,7 @@ export function handGeometry(face: readonly Point[], hands: readonly (readonly P
   let best: HandSignal | null = null;
   for (const hand of hands) {
     if (hand.length < 21) continue;
-    const fingerToNose = Math.min(...FINGERTIPS.map((i) => dist(hand[i], nose))) / faceWidth;
+    const fingerToNose = Math.min(...FINGER_POINTS.map((i) => dist(hand[i], nose))) / faceWidth;
     const box = bounds(hand);
     const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
     const signal: HandSignal = {

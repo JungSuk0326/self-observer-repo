@@ -44,6 +44,8 @@ export interface FaceSignal {
   smoothed: HeadPose & Expression;
   /** 손 신호 — 손 추론이 꺼져 있거나 얼굴이 없으면 null */
   hand: HandSignal | null;
+  /** 손 모델이 로딩돼 있는가 (false면 손 딴짓 감지가 통째로 빠진 상태) */
+  handModelReady: boolean;
   /** performance.now() 기준 타임스탬프 */
   timestamp: number;
 }
