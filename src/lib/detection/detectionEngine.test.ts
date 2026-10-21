@@ -222,3 +222,92 @@ describe("DetectionEngine — 시선 이탈 (D-3)", () => {
     expect(r.events.map((x) => x.type)).toEqual(["absence_end", "look_away_start"]);
   });
 });
+
+describe("DetectionEngine — 손 딴짓 (손 랜드마커)", () => {
+  const noHand = { present: false, fingerToNose: Infinity, offsetX: 0, offsetY: 0, size: 0 };
+  const phoneHand = { present: true, fingerToNose: 1.5, offsetX: 0.2, offsetY: 1.4, size: 0.8 };
+  const deskHand = { present: true, fingerToNose: 2.5, offsetX: 0.3, offsetY: 2.9, size: 0.35 }; // 필기: 더 아래, 작게
+  const noseHand = { present: true, fingerToNose: 0.05, offsetX: 0.1, offsetY: 0.3, size: 0.9 };
+  const chinHand = { present: true, fingerToNose: 0.6, offsetX: 0, offsetY: 0.5, size: 0.9 }; // 턱 괴기
+  const withHand = (t: number, pitch: number, hand: typeof noHand) => ({ present: true, pitch, yaw: 0, hand, timestamp: t });
+  const cfg = { phoneDelayMs: 6000, nosePickDelayMs: 2500, headDownDelayMs: 4000 };
+
+  it("손이 얼굴 아래 앞에 떠 있고 고개가 숙여진 채 지속되면 phone", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 15, phoneHand));
+    expect(e.update(withHand(6000, 15, phoneHand)).state).toBe("focused"); // 5초 — 아직
+    const r = e.update(withHand(7100, 15, phoneHand));
+    expect(r.state).toBe("phone");
+    expect(r.events).toEqual([{ type: "phone_start", at: 7100 }]);
+  });
+
+  it("폰을 내려놓으면 즉시 focused + phone_end", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 15, phoneHand));
+    e.update(withHand(8000, 15, phoneHand));
+    const r = e.update(withHand(8200, 0, noHand));
+    expect(r.state).toBe("focused");
+    expect(r.events).toEqual([{ type: "phone_end", at: 8200 }]);
+  });
+
+  it("필기하는 손(더 아래·작게·고개 많이 숙임)은 폰으로 보지 않는다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 30, deskHand));
+    const r = e.update(withHand(9000, 30, deskHand));
+    expect(r.state).not.toBe("phone");
+    expect(r.events.map((x) => x.type)).not.toContain("phone_start");
+  });
+
+  it("폰 자세가 고개 숙임보다 우선한다 (더 구체적인 설명)", () => {
+    const e = new DetectionEngine({ ...cfg, headDownPitchDeg: 22 });
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 30, phoneHand)); // pitch 30: 고개 숙임 조건도 만족
+    const r = e.update(withHand(7100, 30, phoneHand));
+    expect(r.state).toBe("phone");
+    expect(r.events.map((x) => x.type)).toEqual(["phone_start"]);
+  });
+
+  it("손가락이 코에 붙은 채 지속되면 nose_pick — 집중 상태는 그대로", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 0, noseHand));
+    expect(e.update(withHand(3000, 0, noseHand)).nosePicking).toBe(false); // 2초 — 아직
+    const r = e.update(withHand(3600, 0, noseHand));
+    expect(r.nosePicking).toBe(true);
+    expect(r.state).toBe("focused");
+    expect(r.events).toEqual([{ type: "nose_pick_start", at: 3600 }]);
+    const end = e.update(withHand(4000, 0, noHand));
+    expect(end.nosePicking).toBe(false);
+    expect(end.events).toEqual([{ type: "nose_pick_end", at: 4000 }]);
+  });
+
+  it("잠깐 코를 긁는 것(지연 미만)과 턱 괴기는 판정하지 않는다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 0, noseHand));
+    expect(e.update(withHand(2000, 0, noHand)).events).toEqual([]);
+    e.update(withHand(3000, 0, chinHand));
+    expect(e.update(withHand(9000, 0, chinHand)).nosePicking).toBe(false);
+  });
+
+  it("손 신호가 없으면(손 모델 없음) 손 판정을 건너뛴다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update({ present: true, pitch: 0, yaw: 0, timestamp: 0 });
+    const r = e.update({ present: true, pitch: 15, yaw: 0, timestamp: 10_000 });
+    expect(r.state).toBe("focused");
+    expect(r.nosePicking).toBe(false);
+  });
+
+  it("얼굴을 놓치면 코 파기 상태도 끝난다", () => {
+    const e = new DetectionEngine(cfg);
+    e.update(withHand(0, 0, noHand));
+    e.update(withHand(1000, 0, noseHand));
+    e.update(withHand(4000, 0, noseHand));
+    const r = e.update({ present: false, pitch: 0, yaw: 0, hand: null, timestamp: 4500 });
+    expect(r.nosePicking).toBe(false);
+    expect(r.events.map((x) => x.type)).toContain("nose_pick_end");
+  });
+});

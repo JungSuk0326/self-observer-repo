@@ -15,6 +15,9 @@ const TONE: Record<MessageKind, MessageTone> = {
   head_up: "encourage",
   look_away: "warn",
   look_back: "encourage",
+  phone: "warn",
+  phone_down: "encourage",
+  nose_pick: "info",
   focus_milestone: "encourage",
   goal_reached: "encourage",
 };
@@ -49,6 +52,8 @@ export class MessageEngine {
   private longAbsenceSaid = false;
   private headDownWarned = false;
   private lookAwayWarned = false;
+  private phoneWarned = false;
+  private lastHabitAt: number | null = null;
 
   private lastMilestone = 0;
   private goalSaid = false;
@@ -124,6 +129,28 @@ export class MessageEngine {
           this.lookAwayWarned = false;
           break;
         }
+        case "phone_start": {
+          const msg = this.warn("phone", ev.at);
+          this.phoneWarned = msg !== null;
+          if (msg) out.push(msg);
+          break;
+        }
+        case "phone_end": {
+          if (this.phoneWarned) out.push(this.encourage("phone_down", ev.at));
+          this.phoneWarned = false;
+          break;
+        }
+        case "nose_pick_start": {
+          // 습관 지적은 경고가 아니다 — 가볍게, 아주 드물게
+          const last = this.lastHabitAt;
+          if (last === null || ev.at - last >= this.config.habitCooldownMs) {
+            this.lastHabitAt = ev.at;
+            out.push(this.encourage("nose_pick", ev.at));
+          }
+          break;
+        }
+        case "nose_pick_end":
+          break;
       }
     }
 
@@ -152,7 +179,8 @@ export class MessageEngine {
       milestone > this.lastMilestone &&
       session.lastFocusState !== "away" &&
       session.lastFocusState !== "head_down" &&
-      session.lastFocusState !== "looking_away"
+      session.lastFocusState !== "looking_away" &&
+      session.lastFocusState !== "phone"
     ) {
       this.lastMilestone = milestone;
       if (!goalJustSaid) {
@@ -181,13 +209,15 @@ export class MessageEngine {
     this.longAbsenceSaid = false;
     this.headDownWarned = false;
     this.lookAwayWarned = false;
+    this.phoneWarned = false;
+    this.lastHabitAt = null;
     this.lastMilestone = 0;
     this.goalSaid = false;
   }
 
   /** 경고: 횟수는 항상 세고, 쿨다운 안이면 null */
   private warn(
-    kind: "away" | "head_down" | "look_away",
+    kind: "away" | "head_down" | "look_away" | "phone",
     at: number,
   ): SupervisorMessage | null {
     const count = (this.warnCount[kind] ?? 0) + 1;

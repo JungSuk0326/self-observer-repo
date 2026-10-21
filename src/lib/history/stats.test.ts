@@ -36,7 +36,7 @@ describe("toRecord", () => {
       {
         startedAt: 1000, endedAt: 1000 + 30 * MIN, goalDurationMs: null, goalReached: false,
         elapsedMs: 30 * MIN, focusedMs: 25 * MIN, distractedMs: 5 * MIN, pausedMs: 0,
-        awayCount: 1, headDownCount: 0, lookAwayCount: 2, longestFocusMs: 20 * MIN, focusRatio: 25 / 30,
+        awayCount: 1, headDownCount: 0, lookAwayCount: 2, phoneCount: 1, longestFocusMs: 20 * MIN, focusRatio: 25 / 30,
       },
       at(10),
       { id: "x", personaId: "cat", avatarId: "study" },

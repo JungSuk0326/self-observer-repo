@@ -12,6 +12,9 @@ export type MessageKind =
   | "head_up" // 고개 숙임 해소 격려
   | "look_away" // 시선 이탈 경고 (D-3)
   | "look_back" // 시선 복귀 격려
+  | "phone" // 폰 들기 경고
+  | "phone_down" // 폰 내려놓음 격려
+  | "nose_pick" // 코 파기 — 습관 지적, 가볍게. 드물게만
   | "focus_milestone" // 누적 집중 시간 이정표 격려
   | "goal_reached"; // 목표 시간 달성
 
@@ -45,10 +48,13 @@ export interface MessageConfig {
   longAbsenceMs: number;
   /** 누적 집중 시간이 이 간격(ms)마다 이정표 격려를 낸다 */
   milestoneIntervalMs: number;
+  /** 습관 지적(코 파기)의 최소 간격(ms). 경고보다 훨씬 드물게 — 잔소리가 되면 안 된다 */
+  habitCooldownMs: number;
 }
 
 export const DEFAULT_MESSAGE_CONFIG: MessageConfig = {
   warnCooldownMs: 45_000,
   longAbsenceMs: 5 * 60_000,
   milestoneIntervalMs: 15 * 60_000,
+  habitCooldownMs: 10 * 60_000,
 };

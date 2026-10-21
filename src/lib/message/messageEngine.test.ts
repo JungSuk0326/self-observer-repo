@@ -16,6 +16,7 @@ function snap(over: Partial<SessionSnapshot> = {}): SessionSnapshot {
     awayCount: 0,
     headDownCount: 0,
     lookAwayCount: 0,
+    phoneCount: 0,
     lastFocusState: "focused",
     ...over,
   };
@@ -220,5 +221,21 @@ describe("MessageEngine — 페르소나", () => {
     expect(e.update(tick(0))[0].text).toBe(drill.session_start[0]);
     e.setTemplates(cat);
     expect(e.update(tick(5000, [ev("absence_start", 5000)]))[0].text).toBe(cat.away[0]);
+  });
+});
+
+describe("MessageEngine — 손 딴짓", () => {
+  it("폰 경고와 내려놓음 격려", () => {
+    const e = startedEngine();
+    expect(e.update(tick(5000, [ev("phone_start", 5000)])).map((m) => m.kind)).toEqual(["phone"]);
+    expect(e.update(tick(9000, [ev("phone_end", 9000)])).map((m) => m.kind)).toEqual(["phone_down"]);
+  });
+
+  it("코 파기 지적은 습관 쿨다운(10분) 안에서는 한 번만", () => {
+    const e = startedEngine({ habitCooldownMs: 600_000 });
+    expect(e.update(tick(5000, [ev("nose_pick_start", 5000)])).map((m) => m.kind)).toEqual(["nose_pick"]);
+    e.update(tick(6000, [ev("nose_pick_end", 6000)]));
+    expect(e.update(tick(120_000, [ev("nose_pick_start", 120_000)]))).toEqual([]);
+    expect(e.update(tick(700_000, [ev("nose_pick_start", 700_000)])).map((m) => m.kind)).toEqual(["nose_pick"]);
   });
 });

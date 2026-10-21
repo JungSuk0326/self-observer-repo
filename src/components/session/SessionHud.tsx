@@ -24,7 +24,7 @@ export default function SessionHud({ snapshot }: SessionHudProps) {
         {formatClock(snapshot.distractedMs)}
         <br />
         자리비움 {snapshot.awayCount} · 고개숙임 {snapshot.headDownCount} · 시선이탈{" "}
-        {snapshot.lookAwayCount}
+        {snapshot.lookAwayCount} · 폰 {snapshot.phoneCount}
       </div>
     </div>
   );

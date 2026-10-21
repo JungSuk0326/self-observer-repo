@@ -33,6 +33,9 @@ const BY_MESSAGE: Partial<Record<MessageKind, EmoteSpec>> = {
   goal_reached: { name: "happy", durationMs: 4000, strength: 1 },
   // 딴 데 보다 들킴
   look_away: { name: "surprised", durationMs: 1800, strength: 0.8 },
+  phone: { name: "surprised", durationMs: 1800, strength: 0.8 },
+  phone_down: { name: "happy", durationMs: 1500, strength: 0.5 },
+  nose_pick: { name: "surprised", durationMs: 2200, strength: 1 },
   // 졸음 경고엔 나른한 표정
   head_down: { name: "relaxed", durationMs: 2200, strength: 0.7 },
   away_long: { name: "sad", durationMs: 3000, strength: 0.8 },

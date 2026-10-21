@@ -18,6 +18,8 @@ export interface SessionRecord {
   awayCount: number;
   headDownCount: number;
   lookAwayCount: number;
+  /** 예전 기록엔 없을 수 있다 (손 감지 이전) */
+  phoneCount?: number;
   longestFocusMs: number;
   focusRatio: number;
 }

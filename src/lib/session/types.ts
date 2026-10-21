@@ -22,6 +22,7 @@ export interface SessionSnapshot {
   awayCount: number;
   headDownCount: number;
   lookAwayCount: number;
+  phoneCount: number;
   /** 마지막으로 반영된 집중 상태 */
   lastFocusState: FocusState;
 }
@@ -39,6 +40,7 @@ export interface SessionSummary {
   awayCount: number;
   headDownCount: number;
   lookAwayCount: number;
+  phoneCount: number;
   /** 끊김 없이 이어진 최장 집중 구간(ms). 이탈·휴식이 구간을 끊는다 */
   longestFocusMs: number;
   /** 집중률(0~1). elapsed 0이면 0 */

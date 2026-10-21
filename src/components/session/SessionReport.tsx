@@ -50,8 +50,8 @@ export default function SessionReport({ record, evaluation, saved, onClose }: Se
     { label: "휴식", value: formatClock(record.pausedMs) },
     { label: "최장 연속 집중", value: formatClock(record.longestFocusMs) },
     {
-      label: "자리비움 · 고개숙임 · 시선이탈",
-      value: `${record.awayCount} · ${record.headDownCount} · ${record.lookAwayCount}`,
+      label: "자리비움 · 고개숙임 · 시선이탈 · 폰",
+      value: `${record.awayCount} · ${record.headDownCount} · ${record.lookAwayCount} · ${record.phoneCount ?? 0}`,
     },
   ];
 

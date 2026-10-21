@@ -36,6 +36,7 @@ const STATE_BANNER: Record<FocusState, { label: string; className: string }> = {
   away: { label: "🔴 부재 감지 — 자리를 비웠어요", className: "bg-red-700/90" },
   head_down: { label: "🟠 고개 숙임 지속 — 졸리신가요?", className: "bg-amber-600/90" },
   looking_away: { label: "🟡 시선 이탈 — 화면 밖을 보고 있어요", className: "bg-yellow-600/90" },
+  phone: { label: "📱 폰 들기 감지", className: "bg-purple-700/90" },
 };
 
 function formatMs(ms: number): string {
@@ -160,6 +161,7 @@ export default function VisionDevPage() {
         present: s.present,
         pitch: corrected.pitch,
         yaw: corrected.yaw,
+        hand: s.hand,
         timestamp: s.timestamp,
       });
       setFocusState(state);
@@ -244,7 +246,7 @@ export default function VisionDevPage() {
             {formatMs(sessionSnap.distractedMs)}
             <br />
             자리비움 {sessionSnap.awayCount} · 고개숙임 {sessionSnap.headDownCount} · 시선이탈{" "}
-            {sessionSnap.lookAwayCount}
+            {sessionSnap.lookAwayCount} · 폰 {sessionSnap.phoneCount}
           </div>
         </div>
       )}
@@ -302,6 +304,13 @@ export default function VisionDevPage() {
           {(signal ? applyBaseline(signal.pose, baseline).pitch : 0).toFixed(0)}°{" "}
           <span className="text-gray-400">yaw</span>{" "}
           {(signal?.pose.yaw ?? 0).toFixed(0)}°
+          <br />
+          <span className="text-gray-400">손</span>{" "}
+          {signal?.hand?.present
+            ? `코 ${signal.hand.fingerToNose.toFixed(2)} · y ${signal.hand.offsetY.toFixed(1)} · 크기 ${signal.hand.size.toFixed(2)}`
+            : signal?.hand
+              ? "없음"
+              : "—"}
         </div>
       )}
 
@@ -370,9 +379,10 @@ export default function VisionDevPage() {
                 <dd>{formatMs(summary.pausedMs)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-gray-400">자리비움 / 고개숙임 / 시선이탈</dt>
+                <dt className="text-gray-400">자리비움 / 고개숙임 / 시선이탈 / 폰</dt>
                 <dd>
-                  {summary.awayCount} / {summary.headDownCount} / {summary.lookAwayCount}회
+                  {summary.awayCount} / {summary.headDownCount} / {summary.lookAwayCount} /{" "}
+                  {summary.phoneCount}회
                 </dd>
               </div>
               <div className="flex justify-between border-t border-gray-700 pt-2 font-bold">

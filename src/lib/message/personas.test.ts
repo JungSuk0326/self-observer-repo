@@ -37,3 +37,13 @@ describe("페르소나 인사", () => {
     });
   }
 });
+
+describe("손 딴짓 문구", () => {
+  for (const p of PERSONAS) {
+    it(`${p.name}: phone 3단계, phone_down·nose_pick 존재`, () => {
+      expect(p.templates.phone.length).toBe(3);
+      expect(p.templates.phone_down.length).toBeGreaterThan(0);
+      expect(p.templates.nose_pick.length).toBeGreaterThan(0);
+    });
+  }
+});

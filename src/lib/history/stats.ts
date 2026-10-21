@@ -47,6 +47,7 @@ export function toRecord(
     awayCount: summary.awayCount,
     headDownCount: summary.headDownCount,
     lookAwayCount: summary.lookAwayCount,
+    phoneCount: summary.phoneCount,
     longestFocusMs: summary.longestFocusMs,
     focusRatio: summary.focusRatio,
   };

@@ -1,4 +1,5 @@
-import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
+import { handGeometry } from "./handGeometry";
 import { matrixToEuler } from "./matrix";
 import type { FaceFrameCallback, FaceSignal, TrackerStats } from "./types";
 
@@ -7,10 +8,14 @@ const WASM_BASE_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const HAND_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
 // ── 발열 절감 파라미터 (스파이크에서 iPhone 15 Pro 실기 검증) ──
 /** 추론 주기. 감지 목적엔 10Hz면 충분 — 매 프레임 추론은 발열 주범 */
 const INFER_INTERVAL_MS = 100;
+/** 손 추론 주기. 코 파기·폰 들기는 초 단위로 지속되는 행동이라 3Hz면 충분하다 */
+const HAND_INTERVAL_MS = 333;
 /** 저주기 추론값을 렌더 프레임에 잇는 보간 계수 */
 const SMOOTH_FACTOR = 0.35;
 /** 이동 평균 윈도 크기 */
@@ -41,6 +46,9 @@ const BLENDSHAPE_KEYS = {
  */
 export class FaceTracker {
   private landmarker: FaceLandmarker;
+  private handLandmarker: HandLandmarker | null;
+  private lastHandTs = 0;
+  private lastHand: ReturnType<HandLandmarker["detectForVideo"]> | null = null;
   private rafId: number | null = null;
   private lastVideoTime = -1;
   private lastInferTs = 0;
@@ -52,21 +60,35 @@ export class FaceTracker {
     blinkL: 0, blinkR: 0, jaw: 0, brow: 0, smile: 0,
   };
 
-  private constructor(landmarker: FaceLandmarker) {
+  private constructor(landmarker: FaceLandmarker, handLandmarker: HandLandmarker | null) {
     this.landmarker = landmarker;
+    this.handLandmarker = handLandmarker;
   }
 
-  /** 모델 로딩 포함 — 첫 호출 시 수 초 걸릴 수 있음 (진행 표시는 호출부 책임) */
+  /**
+   * 모델 로딩 포함 — 첫 호출 시 수 초 걸릴 수 있음 (진행 표시는 호출부 책임).
+   * 손 모델은 실패해도 얼굴 추적은 계속한다 (손 딴짓 감지만 빠진다).
+   */
   static async create(): Promise<FaceTracker> {
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
-    const landmarker = await FaceLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-      runningMode: "VIDEO",
-      numFaces: 1,
-      outputFaceBlendshapes: true,
-      outputFacialTransformationMatrixes: true,
-    });
-    return new FaceTracker(landmarker);
+    const [landmarker, handLandmarker] = await Promise.all([
+      FaceLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: true,
+      }),
+      HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
+        runningMode: "VIDEO",
+        numHands: 2,
+      }).catch((e: unknown) => {
+        console.warn("손 모델 로딩 실패 — 손 딴짓 감지 없이 진행", e);
+        return null;
+      }),
+    ]);
+    return new FaceTracker(landmarker, handLandmarker);
   }
 
   /** rAF 루프 시작. video는 재생 중인 카메라 스트림이어야 한다. */
@@ -94,6 +116,7 @@ export class FaceTracker {
   close(): void {
     this.stop();
     this.landmarker.close();
+    this.handLandmarker?.close();
   }
 
   private lastResult: ReturnType<FaceLandmarker["detectForVideo"]> | null = null;
@@ -114,6 +137,15 @@ export class FaceTracker {
       this.lastInferTs = ts;
       const t0 = performance.now();
       this.lastResult = this.landmarker.detectForVideo(video, t0);
+      // 손 추론은 더 낮은 주기로, 얼굴이 보일 때만 (부재 중엔 돌릴 이유가 없다)
+      if (
+        this.handLandmarker &&
+        this.lastResult.faceLandmarks?.length &&
+        ts - this.lastHandTs >= HAND_INTERVAL_MS
+      ) {
+        this.lastHandTs = ts;
+        this.lastHand = this.handLandmarker.detectForVideo(video, performance.now());
+      }
       this.pushWindowed(this.inferTimes, performance.now() - t0);
     }
 
@@ -142,7 +174,13 @@ export class FaceTracker {
       this.smoothed[key] += (target[key] - this.smoothed[key]) * SMOOTH_FACTOR;
     }
 
-    return { present, pose, smoothed: { ...this.smoothed }, timestamp: ts };
+    const faceLandmarks = result?.faceLandmarks?.[0];
+    const hand =
+      present && faceLandmarks && this.handLandmarker
+        ? handGeometry(faceLandmarks, this.lastHand?.landmarks ?? [])
+        : null;
+
+    return { present, pose, smoothed: { ...this.smoothed }, hand, timestamp: ts };
   }
 
   private buildStats(): TrackerStats {

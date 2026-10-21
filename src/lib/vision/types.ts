@@ -19,6 +19,22 @@ export interface Expression {
  * 함께 모드에서 동료에게 전송되는 것도 정확히 이 데이터다(영상 아님) —
  * 아키텍처 원칙 2 (CLAUDE.md).
  */
+/**
+ * 손 신호 — 얼굴 기준 상대 좌표 (단위: 얼굴 폭). 카메라 거리와 무관하게 쓰기 위해
+ * 픽셀이 아니라 얼굴 폭으로 정규화한다. 얼굴이 없으면 계산하지 않는다.
+ */
+export interface HandSignal {
+  /** 손 검출 여부 */
+  present: boolean;
+  /** 다섯 손가락 끝 중 코끝에 가장 가까운 것까지의 거리 (얼굴 폭 단위) */
+  fingerToNose: number;
+  /** 손 중심 − 얼굴 중심. x: + 화면 오른쪽, y: + 아래 (얼굴 폭 단위) */
+  offsetX: number;
+  offsetY: number;
+  /** 손 바운딩 박스 대각선 / 얼굴 폭 — 카메라에 가까울수록 커진다 */
+  size: number;
+}
+
 export interface FaceSignal {
   /** 얼굴 검출 여부 (부재 감지의 입력) */
   present: boolean;
@@ -26,6 +42,8 @@ export interface FaceSignal {
   pose: HeadPose;
   /** 렌더링용 보간(smoothed) 값 — 저주기 추론을 부드럽게 */
   smoothed: HeadPose & Expression;
+  /** 손 신호 — 손 추론이 꺼져 있거나 얼굴이 없으면 null */
+  hand: HandSignal | null;
   /** performance.now() 기준 타임스탬프 */
   timestamp: number;
 }

@@ -222,6 +222,7 @@ export default function SessionPage() {
         present: signal.present,
         pitch: corrected.pitch,
         yaw: corrected.yaw,
+        hand: signal.hand,
         timestamp: signal.timestamp,
       });
       setFocusState(state);
