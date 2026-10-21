@@ -56,6 +56,8 @@ export const MESSAGE_TEMPLATES: Record<MessageKind, readonly string[]> = {
   nose_pick: [
     "저… 코는 나중에 파시는 걸로. 다 보여요.",
     "손이 코에 가 있어요. 휴지 한 장 어떠세요?",
+    "또 코예요. 손 내리고 다시 집중해요.",
+    "코 그만. 책으로 돌아올까요?",
   ],
   focus_milestone: [
     "{minutes}분 집중하셨어요. 잘하고 계세요.",

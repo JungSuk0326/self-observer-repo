@@ -48,7 +48,7 @@ export interface MessageConfig {
   longAbsenceMs: number;
   /** 누적 집중 시간이 이 간격(ms)마다 이정표 격려를 낸다 */
   milestoneIntervalMs: number;
-  /** 습관 지적(코 파기)의 최소 간격(ms). 경고보다 훨씬 드물게 — 잔소리가 되면 안 된다 */
+  /** 습관 지적(코 파기)의 최소 간격(ms). 매번 알리되, 손 떨림으로 연달아 울리는 것만 막는다 */
   habitCooldownMs: number;
 }
 
@@ -56,5 +56,5 @@ export const DEFAULT_MESSAGE_CONFIG: MessageConfig = {
   warnCooldownMs: 45_000,
   longAbsenceMs: 5 * 60_000,
   milestoneIntervalMs: 15 * 60_000,
-  habitCooldownMs: 10 * 60_000,
+  habitCooldownMs: 5000,
 };

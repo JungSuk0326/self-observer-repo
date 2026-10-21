@@ -141,7 +141,7 @@ export class MessageEngine {
           break;
         }
         case "nose_pick_start": {
-          // 습관 지적은 경고가 아니다 — 가볍게, 아주 드물게
+          // 습관 지적은 경고가 아니다 — 가볍게. 매번 알리되 연타만 막는다
           const last = this.lastHabitAt;
           if (last === null || ev.at - last >= this.config.habitCooldownMs) {
             this.lastHabitAt = ev.at;

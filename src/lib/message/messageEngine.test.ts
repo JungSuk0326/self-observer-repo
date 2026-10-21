@@ -231,11 +231,23 @@ describe("MessageEngine — 손 딴짓", () => {
     expect(e.update(tick(9000, [ev("phone_end", 9000)])).map((m) => m.kind)).toEqual(["phone_down"]);
   });
 
-  it("코 파기 지적은 습관 쿨다운(10분) 안에서는 한 번만", () => {
+  it("코 파기 지적은 매번 내되, 습관 쿨다운 안의 연타만 막는다", () => {
     const e = startedEngine({ habitCooldownMs: 600_000 });
     expect(e.update(tick(5000, [ev("nose_pick_start", 5000)])).map((m) => m.kind)).toEqual(["nose_pick"]);
     e.update(tick(6000, [ev("nose_pick_end", 6000)]));
     expect(e.update(tick(120_000, [ev("nose_pick_start", 120_000)]))).toEqual([]);
     expect(e.update(tick(700_000, [ev("nose_pick_start", 700_000)])).map((m) => m.kind)).toEqual(["nose_pick"]);
+  });
+});
+
+describe("MessageEngine — 코 파기 기본 쿨다운", () => {
+  it("기본값(5초)에서는 다음 코 파기마다 다시 알리고 문구를 돌려 쓴다", () => {
+    const e = startedEngine();
+    const a = e.update(tick(5000, [ev("nose_pick_start", 5000)]));
+    e.update(tick(6000, [ev("nose_pick_end", 6000)]));
+    expect(e.update(tick(7000, [ev("nose_pick_start", 7000)]))).toEqual([]); // 2초 뒤 — 연타 차단
+    const b = e.update(tick(15_000, [ev("nose_pick_start", 15_000)]));
+    expect(b.map((m) => m.kind)).toEqual(["nose_pick"]);
+    expect(b[0].text).not.toBe(a[0].text);
   });
 });
